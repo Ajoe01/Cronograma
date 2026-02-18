@@ -185,7 +185,8 @@ function guardar() {
     fecha_inicio: fechaInicio,
     fecha_limite: fechaLimite,
     prioridad:    document.getElementById('aPrio').value,
-    creada_por:   me.user
+    creada_por:   me.nombre.split(" ")[0]
+
   };
 
   const url    = editId !== null ? `/api/actividades/${editId}` : '/api/actividades';
@@ -242,7 +243,7 @@ function confirmarCompletar() {
   fetch(`/api/actividades/${pendiente}/completar`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fecha_completado: fechaISO, completada_por: me.user })
+    body: JSON.stringify({ fecha_completado: fechaISO, completada_por: me.nombre.split(" ")[0]})
   })
     .then(r => r.json())
     .then(d => {
@@ -321,3 +322,4 @@ window.onclick = function(event) {
   if (event.target == document.getElementById('modalAct')) cerrarModal();
   if (event.target == document.getElementById('confirmOv')) cerrarConfirm();
 };
+
