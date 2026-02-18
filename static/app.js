@@ -385,6 +385,10 @@ function abrirConfirm() {
   document.getElementById("confirmOv").style.display = "flex";
 }
 
+function cerrarConfirm() {
+  document.getElementById("confirmOv").style.display = "none";
+}
+
 function abrirModal(id = null) {
   const inputIni = document.getElementById("aIni");
   const inputLim = document.getElementById("aLim");
@@ -409,3 +413,4 @@ function abrirModal(id = null) {
   }
   document.getElementById("modalAct").style.display = "flex";
 }
+
