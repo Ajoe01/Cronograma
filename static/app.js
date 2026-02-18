@@ -366,3 +366,46 @@ function abrirModal(id = null) {
     
     document.getElementById("modalAct").style.display = "flex";
 }
+
+function abrirConfirm() {
+  const hoy = new Date();
+  
+  // Forzamos el formato local de Colombia dd/mm/aaaa
+  // Esto garantiza que aunque sean las 11:59 PM, use la fecha de tu reloj
+  const fechaLatina = hoy.toLocaleDateString('es-CO', {
+    timeZone: 'America/Bogota',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  // Importante: Si tu input es type="date", no aceptará dd/mm/aaaa.
+  // Por eso, cambiaremos el input a type="text" en el HTML.
+  document.getElementById("fechaCompletado").value = fechaLatina;
+  document.getElementById("confirmOv").style.display = "flex";
+}
+
+function abrirModal(id = null) {
+  const inputIni = document.getElementById("aIni");
+  const inputLim = document.getElementById("aLim");
+  const selectResp = document.getElementById("aResp"); // Asegúrate que el ID sea aResp
+
+  if (id) {
+    // EDITAR: Bloqueamos fechas
+    document.getElementById("mTitle").innerText = "Editar Actividad";
+    inputIni.readOnly = true;
+    inputLim.readOnly = true;
+    inputIni.style.backgroundColor = "#e9e9e9";
+    inputLim.style.backgroundColor = "#e9e9e9";
+    // ... cargar el resto de datos
+  } else {
+    // NUEVA: Habilitamos fechas y limpiamos
+    document.getElementById("mTitle").innerText = "Nueva Actividad";
+    inputIni.readOnly = false;
+    inputLim.readOnly = false;
+    inputIni.style.backgroundColor = "#fff";
+    inputLim.style.backgroundColor = "#fff";
+    // ... limpiar campos
+  }
+  document.getElementById("modalAct").style.display = "flex";
+}
