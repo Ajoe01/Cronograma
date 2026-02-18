@@ -72,6 +72,7 @@ function login() {
     .then(d => {
       if (d.ok) {
         me = d.usuario;
+        localStorage.setItem("me", JSON.stringify(me));
         document.getElementById('curUser').textContent  = me.nombre || me.user;
         document.getElementById('curCargo').textContent = me.cargo  || '';
         document.getElementById('loginScreen').style.display = 'none';
@@ -94,6 +95,7 @@ function login() {
 
 function logout() {
   me = null;
+  localStorage.removeItem("me");
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appScreen').style.display   = 'none';
 }
@@ -322,4 +324,21 @@ window.onclick = function(event) {
   if (event.target == document.getElementById('modalAct')) cerrarModal();
   if (event.target == document.getElementById('confirmOv')) cerrarConfirm();
 };
+window.addEventListener("DOMContentLoaded", () => {
+  const saved = localStorage.getItem("me");
+
+  if (saved) {
+    me = JSON.parse(saved);
+
+    document.getElementById('curUser').textContent  = me.nombre || me.user;
+    document.getElementById('curCargo').textContent = me.cargo  || '';
+
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display   = 'block';
+
+    cargar();
+  }
+});
+
+
 
