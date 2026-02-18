@@ -1,6 +1,5 @@
 /* =============================================
-   CRONOGRAMA UTB — app.js
-   Toda la lógica del frontend
+   CRONOGRAMA UTB — app.js (ACTUALIZADO)
    ============================================= */
 
 let me        = null;   // usuario activo
@@ -97,49 +96,24 @@ function logout() {
   me = null;
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appScreen').style.display   = 'none';
-  document.getElementById('liUser').value = '';
-  document.getElementById('liPass').value = '';
-  document.getElementById('liMsg').style.display = 'none';
 }
 
 // ==================== LÓGICA DE ESTADO ====================
-/*
-  El color depende de CUÁNDO se completó vs la fecha límite:
-  - default   🟡 : No completada (en ejecución)
-  - prematuro 🔵 : Completada más de 7 días ANTES del límite
-  - tiempo    🟢 : Completada entre 7 días antes y el día límite (diff -7 a 0)
-  - leve      🟠 : Completada entre 1 y 7 días DESPUÉS del límite
-  - tarde     🔴 : Completada más de 7 días DESPUÉS del límite
-*/
 function getEstado(act) {
   if (!act.completada) return 'default';
-
   const lim  = new Date(act.fecha_limite  + 'T00:00:00');
   const comp = new Date(act.fecha_completado + 'T00:00:00');
-  const diff = Math.round((comp - lim) / 86400000); // días (neg=antes, pos=después)
-
-  if (diff < -7)  return 'prematuro'; // 🔵 más de 7d antes
-  if (diff <= 0)  return 'tiempo';    // 🟢 hasta 7d antes y el día límite
-  if (diff <= 7)  return 'leve';      // 🟠 hasta 7d después
-  return 'tarde';                      // 🔴 más de 7d después
+  const diff = Math.round((comp - lim) / 86400000); 
+  if (diff < -7)  return 'prematuro';
+  if (diff <= 0)  return 'tiempo';   
+  if (diff <= 7)  return 'leve';     
+  return 'tarde';                    
 }
 
-const ELABEL = {
-  default:   'En ejecución',
-  prematuro: 'Prematuro 🔵',
-  tiempo:    'A tiempo ✅',
-  leve:      'Retraso leve',
-  tarde:     'Retraso grave'
-};
-const EBADGE = {
-  default: 'b-default', prematuro: 'b-prematuro',
-  tiempo:  'b-tiempo',  leve:      'b-leve', tarde: 'b-tarde'
-};
-const EROW = {
-  default: 'e-default', prematuro: 'e-prematuro',
-  tiempo:  'e-tiempo',  leve:      'e-leve', tarde: 'e-tarde'
-};
-const PRIO = { alta: '🔴 Alta', media: '🟡 Media', baja: '🟢 Baja' };
+const ELABEL = { default: 'En ejecución', prematuro: 'Prematuro 🔵', tiempo: 'A tiempo ✅', leve: 'Retraso leve', tarde: 'Retraso grave' };
+const EBADGE = { default: 'b-default', prematuro: 'b-prematuro', tiempo: 'b-tiempo', leve: 'b-leve', tarde: 'b-tarde' };
+const EROW   = { default: 'e-default', prematuro: 'e-prematuro', tiempo: 'e-tiempo', leve: 'e-leve', tarde: 'e-tarde' };
+const PRIO   = { alta: '🔴 Alta', media: '🟡 Media', baja: '🟢 Baja' };
 
 const ff = f => {
   if (!f) return '-';
@@ -150,7 +124,11 @@ const ff = f => {
 // ==================== MODAL ACTIVIDAD ====================
 function abrirModal(id = null) {
   editId = id;
+  const inputIni = document.getElementById("aIni");
+  const inputLim = document.getElementById("aLim");
+  
   if (id !== null) {
+    // MODO EDICIÓN: Cargar y BLOQUEAR fechas
     fetch(`/api/actividades/${id}`)
       .then(r => r.json())
       .then(a => {
@@ -158,26 +136,40 @@ function abrirModal(id = null) {
         document.getElementById('aNom').value   = a.nombre;
         document.getElementById('aDesc').value  = a.descripcion || '';
         document.getElementById('aResp').value  = a.responsable;
-        document.getElementById('aIni').value   = a.fecha_inicio || '';
-        document.getElementById('aLim').value   = a.fecha_limite || '';
         document.getElementById('aPrio').value  = a.prioridad || 'media';
+        
+        // Mantener fechas originales y bloquear
+        inputIni.value = a.fecha_inicio || '';
+        inputLim.value = a.fecha_limite || '';
+        inputIni.readOnly = true;
+        inputLim.readOnly = true;
+        inputIni.style.backgroundColor = "#e9ecef";
+        inputLim.style.backgroundColor = "#e9ecef";
       });
   } else {
+    // MODO NUEVA: Limpiar y HABILITAR fechas
     document.getElementById('mTitle').textContent = '➕ Nueva Actividad';
     ['aNom', 'aDesc', 'aResp', 'aIni', 'aLim'].forEach(i => document.getElementById(i).value = '');
     document.getElementById('aPrio').value = 'media';
+    
+    inputIni.readOnly = false;
+    inputLim.readOnly = false;
+    inputIni.style.backgroundColor = "#fff";
+    inputLim.style.backgroundColor = "#fff";
   }
   document.getElementById('modalAct').classList.add('open');
+  document.getElementById('modalAct').style.display = "flex";
 }
 
 function cerrarModal() {
   document.getElementById('modalAct').classList.remove('open');
+  document.getElementById('modalAct').style.display = "none";
   editId = null;
 }
 
 function guardar() {
   const nombre      = document.getElementById('aNom').value.trim();
-  const responsable = document.getElementById('aResp').value.trim();
+  const responsable = document.getElementById('aResp').value; // Toma el valor del SELECT
   const fechaInicio = document.getElementById('aIni').value;
   const fechaLimite = document.getElementById('aLim').value;
 
@@ -211,28 +203,46 @@ function guardar() {
     });
 }
 
-// ==================== COMPLETAR ====================
+// ==================== COMPLETAR (ZONA HORARIA COLOMBIA) ====================
 function solicitarCompletar(id) {
   pendiente = id;
   fetch(`/api/actividades/${id}`)
     .then(r => r.json())
     .then(a => {
       document.getElementById('confirmTxt').textContent =
-        `"${a.nombre}" — Fecha límite: ${ff(a.fecha_limite)}. Indica la fecha real de finalización:`;
-      document.getElementById('fechaCompletado').value = new Date().toISOString().split('T')[0];
+        `"${a.nombre}" — Fecha límite: ${ff(a.fecha_limite)}.`;
+      
+      // FORZAR FECHA LOCAL DE COLOMBIA EN FORMATO DD/MM/AAAA
+      const hoy = new Date();
+      const fechaLatina = hoy.toLocaleDateString('es-CO', {
+        timeZone: 'America/Bogota',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+
+      const campoFecha = document.getElementById('fechaCompletado');
+      campoFecha.value = fechaLatina;
+      // Aseguramos que sea type text para que no cambie el orden
+      campoFecha.type = "text"; 
+
       document.getElementById('confirmOv').classList.add('open');
+      document.getElementById('confirmOv').style.display = "flex";
     });
 }
 
 function confirmarCompletar() {
-  const fechaComp = document.getElementById('fechaCompletado').value;
-  if (!fechaComp) { alert('⚠️ Selecciona la fecha de completado'); return; }
-  if (pendiente === null) return;
+  let fechaComp = document.getElementById('fechaCompletado').value; // "dd/mm/aaaa"
+  if (!fechaComp) { alert('⚠️ Fecha requerida'); return; }
+
+  // Convertir dd/mm/aaaa a aaaa-mm-dd para la base de datos
+  const [d, m, y] = fechaComp.split('/');
+  const fechaISO = `${y}-${m}-${d}`;
 
   fetch(`/api/actividades/${pendiente}/completar`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fecha_completado: fechaComp, completada_por: me.user })
+    body: JSON.stringify({ fecha_completado: fechaISO, completada_por: me.user })
   })
     .then(r => r.json())
     .then(d => {
@@ -243,18 +253,16 @@ function confirmarCompletar() {
 
 function cerrarConfirm() {
   document.getElementById('confirmOv').classList.remove('open');
+  document.getElementById('confirmOv').style.display = "none";
   pendiente = null;
 }
 
-// ==================== ELIMINAR ====================
+// ==================== ELIMINAR / FILTRAR / CARGAR ====================
 function eliminar(id) {
-  if (!confirm('¿Eliminar esta actividad? Esta acción no se puede deshacer.')) return;
-  fetch(`/api/actividades/${id}`, { method: 'DELETE' })
-    .then(r => r.json())
-    .then(d => { if (d.ok) cargar(); });
+  if (!confirm('¿Eliminar esta actividad?')) return;
+  fetch(`/api/actividades/${id}`, { method: 'DELETE' }).then(r => r.json()).then(d => { if (d.ok) cargar(); });
 }
 
-// ==================== FILTRAR ====================
 function filtrar(e, btn) {
   filtroAct = e;
   document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
@@ -262,7 +270,6 @@ function filtrar(e, btn) {
   cargar();
 }
 
-// ==================== RENDER PRINCIPAL ====================
 function cargar() {
   fetch('/api/actividades')
     .then(r => r.json())
@@ -270,7 +277,6 @@ function cargar() {
       const cnt = { total: acts.length, default: 0, prematuro: 0, tiempo: 0, leve: 0, tarde: 0 };
       acts.forEach(a => { const e = getEstado(a); cnt[e] = (cnt[e] || 0) + 1; });
 
-      // Stats
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat s-tot"><div class="sn">${cnt.total}</div><div class="sl">Total</div></div>
         <div class="stat s-am"><div class="sn">${cnt.default}</div><div class="sl">🟡 En ejecución</div></div>
@@ -279,138 +285,39 @@ function cargar() {
         <div class="stat s-na"><div class="sn">${cnt.leve}</div><div class="sl">🟠 Retraso leve</div></div>
         <div class="stat s-ro"><div class="sn">${cnt.tarde}</div><div class="sl">🔴 Retraso grave</div></div>`;
 
-      // Filtrar
       const filtradas = filtroAct === 'todas' ? acts : acts.filter(a => getEstado(a) === filtroAct);
       const cont = document.getElementById('actList');
 
       if (!filtradas.length) {
-        cont.innerHTML = '<div class="empty"><div class="ei">📭</div><p>No hay actividades en esta categoría</p></div>';
+        cont.innerHTML = '<div class="empty"><div class="ei">📭</div><p>No hay actividades</p></div>';
         return;
       }
 
       cont.innerHTML = filtradas.map(a => {
-        const e    = getEstado(a);
+        const e = getEstado(a);
         const done = a.completada;
-
-        const bComp = done
-          ? `<button class="btn-a btn-lock" disabled title="Ya completada">✅</button>`
-          : `<button class="btn-a btn-comp" onclick="solicitarCompletar(${a.id})" title="Completar">✔</button>`;
-
-        const bEdit = done
-          ? `<button class="btn-a btn-lock" disabled title="Bloqueado">🔒</button>`
-          : `<button class="btn-a btn-edit" onclick="abrirModal(${a.id})" title="Editar">✏️</button>`;
-
-        const compInfo = done
-          ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${a.completada_por}</div>`
-          : '';
-
+        const bComp = done ? `<button class="btn-a btn-lock" disabled>✅</button>` : `<button class="btn-a btn-comp" onclick="solicitarCompletar(${a.id})">✔</button>`;
+        const bEdit = done ? `<button class="btn-a btn-lock" disabled>🔒</button>` : `<button class="btn-a btn-edit" onclick="abrirModal(${a.id})">✏️</button>`;
+        
         return `
           <div class="a-row ${EROW[e]}">
             <div>
               <div class="a-nom ${done ? 'done' : ''}">${a.nombre}</div>
-              ${a.descripcion ? `<div class="a-desc">${a.descripcion}</div>` : ''}
               <div class="a-meta">${PRIO[a.prioridad] || ''} · Creada por ${a.creada_por || '-'}</div>
-              ${compInfo}
+              ${done ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${a.completada_por}</div>` : ''}
             </div>
-            <div style="font-weight:600;color:#444;font-size:.88rem;">${a.responsable}</div>
-            <div style="font-size:.86rem;color:#666;">${ff(a.fecha_inicio)}</div>
-            <div style="font-size:.86rem;font-weight:600;">${ff(a.fecha_limite)}</div>
+            <div style="font-weight:600;color:#444;">${a.responsable}</div>
+            <div>${ff(a.fecha_inicio)}</div>
+            <div style="font-weight:600;">${ff(a.fecha_limite)}</div>
             <div><span class="badge ${EBADGE[e]}">${ELABEL[e]}</span></div>
-            <div class="acc">${bComp}${bEdit}
-              <button class="btn-a btn-del" onclick="eliminar(${a.id})" title="Eliminar">🗑</button>
-            </div>
+            <div class="acc">${bComp}${bEdit}<button class="btn-a btn-del" onclick="eliminar(${a.id})">🗑</button></div>
           </div>`;
       }).join('');
     });
 }
 
-// Cerrar modales al clic fuera
-document.getElementById('modalAct').addEventListener('click', e => {
-  if (e.target === document.getElementById('modalAct')) cerrarModal();
-});
-document.getElementById('confirmOv').addEventListener('click', e => {
-  if (e.target === document.getElementById('confirmOv')) cerrarConfirm();
-
-});
-
-// Esta función debe integrarse con la que ya tienes en app.js
-function abrirModal(id = null) {
-    const inputInicio = document.getElementById("aIni");
-    const inputLimite = document.getElementById("aLim");
-
-    if (id) {
-        // MODO EDICIÓN
-        document.getElementById("mTitle").innerText = "Editar Actividad";
-        // Bloqueamos las fechas
-        inputInicio.readOnly = true;
-        inputLimite.readOnly = true;
-        // Opcional: añadir un estilo visual de bloqueo
-        inputInicio.style.backgroundColor = "#f0f0f0";
-        inputLimite.style.backgroundColor = "#f0f0f0";
-        
-        // Aquí iría tu lógica actual para cargar los datos de la actividad...
-    } else {
-        // MODO NUEVA ACTIVIDAD
-        document.getElementById("mTitle").innerText = "Nueva Actividad";
-        // Habilitamos las fechas
-        inputInicio.readOnly = false;
-        inputLimite.readOnly = false;
-        inputInicio.style.backgroundColor = "white";
-        inputLimite.style.backgroundColor = "white";
-        
-        // Limpiar campos si es nueva
-        document.getElementById("aNom").value = "";
-        document.getElementById("aResp").value = "";
-        // ... etc
-    }
-    
-    document.getElementById("modalAct").style.display = "flex";
-}
-
-function abrirConfirm() {
-  const hoy = new Date();
-  
-  // Forzamos el formato local de Colombia dd/mm/aaaa
-  // Esto garantiza que aunque sean las 11:59 PM, use la fecha de tu reloj
-  const fechaLatina = hoy.toLocaleDateString('es-CO', {
-    timeZone: 'America/Bogota',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-
-  // Importante: Si tu input es type="date", no aceptará dd/mm/aaaa.
-  // Por eso, cambiaremos el input a type="text" en el HTML.
-  document.getElementById("fechaCompletado").value = fechaLatina;
-  document.getElementById("confirmOv").style.display = "flex";
-}
-
-function cerrarConfirm() {
-  document.getElementById("confirmOv").style.display = "none";
-}
-
-function abrirModal(id = null) {
-  const inputIni = document.getElementById("aIni");
-  const inputLim = document.getElementById("aLim");
-  const selectResp = document.getElementById("aResp"); // Asegúrate que el ID sea aResp
-
-  if (id) {
-    // EDITAR: Bloqueamos fechas
-    document.getElementById("mTitle").innerText = "Editar Actividad";
-    inputIni.readOnly = true;
-    inputLim.readOnly = true;
-    inputIni.style.backgroundColor = "#e9e9e9";
-    inputLim.style.backgroundColor = "#e9e9e9";
-    // ... cargar el resto de datos
-  } else {
-    // NUEVA: Habilitamos fechas y limpiamos
-    document.getElementById("mTitle").innerText = "Nueva Actividad";
-    inputIni.readOnly = false;
-    inputLim.readOnly = false;
-    inputIni.style.backgroundColor = "#fff";
-    inputLim.style.backgroundColor = "#fff";
-    // ... limpiar campos
-  }
-  document.getElementById("modalAct").style.display = "flex";
-}
-
+// Clic fuera para cerrar
+window.onclick = function(event) {
+  if (event.target == document.getElementById('modalAct')) cerrarModal();
+  if (event.target == document.getElementById('confirmOv')) cerrarConfirm();
+};
