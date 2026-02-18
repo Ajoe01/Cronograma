@@ -207,10 +207,11 @@
     <h3>¿Marcar como completada?</h3>
     <p id="confirmTxt">Una vez confirmada no podrá editarse.</p>
 
-    <div class="fecha-comp-wrap">
-      <label>📅 Fecha en que se completó *</label>
-      <input type="date" id="fechaCompletado" readonly>
-    </div>
+  <div class="fecha-comp-wrap">
+  <label>📅 Fecha en que se completó *</label>
+  <input type="text" id="fechaCompletado" readonly 
+         style="background-color: #f0f0f0; text-align: center; border: 1px solid #ccc; padding: 5px; border-radius: 4px;">
+  </div>
 
     <div class="cbtns">
       <button class="btn-cy" onclick="confirmarCompletar()">Sí, confirmar</button>
@@ -219,27 +220,10 @@
   </div>
 </div>
 
-<script>
-function abrirConfirm() {
-  const hoy = new Date().toLocaleDateString('es-CO', { 
-    timeZone: 'America/Bogota',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-});
-  document.getElementById("fechaCompletado").value = hoy;
-  document.getElementById("confirmOv").style.display = "flex";
-}
-
-function cerrarConfirm() {
-  document.getElementById("confirmOv").style.display = "none";
-}
-</script>
-
-
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 
 </html>
+
 
 
