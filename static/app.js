@@ -330,4 +330,39 @@ document.getElementById('modalAct').addEventListener('click', e => {
 });
 document.getElementById('confirmOv').addEventListener('click', e => {
   if (e.target === document.getElementById('confirmOv')) cerrarConfirm();
+
 });
+
+// Esta función debe integrarse con la que ya tienes en app.js
+function abrirModal(id = null) {
+    const inputInicio = document.getElementById("aIni");
+    const inputLimite = document.getElementById("aLim");
+
+    if (id) {
+        // MODO EDICIÓN
+        document.getElementById("mTitle").innerText = "Editar Actividad";
+        // Bloqueamos las fechas
+        inputInicio.readOnly = true;
+        inputLimite.readOnly = true;
+        // Opcional: añadir un estilo visual de bloqueo
+        inputInicio.style.backgroundColor = "#f0f0f0";
+        inputLimite.style.backgroundColor = "#f0f0f0";
+        
+        // Aquí iría tu lógica actual para cargar los datos de la actividad...
+    } else {
+        // MODO NUEVA ACTIVIDAD
+        document.getElementById("mTitle").innerText = "Nueva Actividad";
+        // Habilitamos las fechas
+        inputInicio.readOnly = false;
+        inputLimite.readOnly = false;
+        inputInicio.style.backgroundColor = "white";
+        inputLimite.style.backgroundColor = "white";
+        
+        // Limpiar campos si es nueva
+        document.getElementById("aNom").value = "";
+        document.getElementById("aResp").value = "";
+        // ... etc
+    }
+    
+    document.getElementById("modalAct").style.display = "flex";
+}
