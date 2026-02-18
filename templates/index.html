@@ -154,18 +154,29 @@
   <div class="mbox">
     <button class="mcls" onclick="cerrarModal()">✕</button>
     <h3 id="mTitle">Nueva Actividad</h3>
+    
     <div class="fg">
       <label>📌 Nombre *</label>
       <input type="text" id="aNom" placeholder="Nombre de la actividad">
     </div>
+
     <div class="fg">
       <label>📝 Descripción</label>
       <textarea id="aDesc" rows="2" placeholder="Descripción breve..."></textarea>
     </div>
+
     <div class="fg">
       <label>👤 Responsable *</label>
-      <input type="text" id="aResp" placeholder="Nombre del responsable">
+      <select id="aResp">
+        <option value="">-- Selecciona departamento responsable --</option>
+        <option>Director de proyecto</option>
+        <option>Director de procesos Mecanicos</option>
+        <option>Director de sitemas electronicos</option>
+        <option>Desarrollador de sistema de control</option>
+        <option>Director financiero</option>
+      </select>
     </div>
+
     <div class="form-row">
       <div class="fg">
         <label>📅 Fecha de Inicio *</label>
@@ -176,6 +187,7 @@
         <input type="date" id="aLim">
       </div>
     </div>
+
     <div class="fg">
       <label>🏷️ Prioridad</label>
       <select id="aPrio">
@@ -229,3 +241,4 @@ function cerrarConfirm() {
 </body>
 
 </html>
+
