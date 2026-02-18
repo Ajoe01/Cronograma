@@ -209,7 +209,12 @@
 
 <script>
 function abrirConfirm() {
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = new Date().toLocaleDateString('es-CO', { 
+    timeZone: 'America/Bogota',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+});
   document.getElementById("fechaCompletado").value = hoy;
   document.getElementById("confirmOv").style.display = "flex";
 }
@@ -222,4 +227,5 @@ function cerrarConfirm() {
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
+
 </html>
