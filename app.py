@@ -1,35 +1,36 @@
 """
-CRONOGRAMA UTB — app.py
-Usa la misma PostgreSQL de Dulce Tentación
-pero con esquema separado para no interferir
+CRONOGRAMA UTB — app.py v2
+Con módulo de finanzas, roles y exportación Excel
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
+from datetime import datetime
+import io
+
+# Para exportar a Excel
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    EXCEL_AVAILABLE = True
+except ImportError:
+    EXCEL_AVAILABLE = False
 
 app = Flask(__name__)
 
-# Configuración de PostgreSQL (la MISMA que Dulce Tentación)
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# IMPORTANTE: Esquema exclusivo para el cronograma
-# Dulce Tentación usa el esquema "public" (por defecto)
-# Cronograma usa "cronograma"
 SCHEMA = "cronograma"
-
 MAX_USUARIOS = 5
 
 
-# ============================================================
-# CONEXIÓN A LA BASE DE DATOS
-# ============================================================
 def get_db():
-    """Retorna conexión con esquema configurado"""
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     cursor.execute(f"SET search_path TO {SCHEMA}, public")
@@ -37,71 +38,87 @@ def get_db():
     return conn
 
 
-# ============================================================
-# INICIALIZAR ESQUEMA Y TABLAS
-# ============================================================
 def init_db():
-    """Crea el esquema 'cronograma' y sus tablas"""
     conn = psycopg2.connect(DATABASE_URL)
     c = conn.cursor()
 
-    # 1. Crear esquema si no existe
     c.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-    print(f"✅ Esquema '{SCHEMA}' creado/verificado")
 
-    # 2. Cambiar al esquema del cronograma
     c.execute(f"SET search_path TO {SCHEMA}, public")
 
-    # 3. Crear tabla usuarios (solo en esquema cronograma)
+    # Tabla usuarios CON ROL
     c.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id        SERIAL PRIMARY KEY,
             username  VARCHAR(100) UNIQUE NOT NULL,
             nombre    VARCHAR(200) NOT NULL,
             cargo     VARCHAR(100) NOT NULL,
+            rol       VARCHAR(50) DEFAULT 'miembro',
             password  VARCHAR(255) NOT NULL,
             creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    # 4. Crear tabla actividades (solo en esquema cronograma)
+    # Tabla actividades CON detalles y observaciones
     c.execute("""
         CREATE TABLE IF NOT EXISTS actividades (
             id                 SERIAL PRIMARY KEY,
             nombre             VARCHAR(300) NOT NULL,
             descripcion        TEXT,
+            detalles           TEXT,
             responsable        VARCHAR(200) NOT NULL,
             fecha_inicio       DATE NOT NULL,
             fecha_limite       DATE NOT NULL,
             prioridad          VARCHAR(20) DEFAULT 'media',
             completada         BOOLEAN DEFAULT FALSE,
             fecha_completado   DATE,
+            observaciones      TEXT,
             completada_por     VARCHAR(100),
             creada_por         VARCHAR(100),
             creada_en          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    # 5. Crear índices
+    # Tabla FINANZAS
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS finanzas (
+            id              SERIAL PRIMARY KEY,
+            fecha_compra    DATE NOT NULL,
+            concepto        VARCHAR(300) NOT NULL,
+            categoria       VARCHAR(100),
+            proveedor       VARCHAR(200),
+            cantidad        INTEGER DEFAULT 1,
+            valor_unitario  DECIMAL(12,2) NOT NULL,
+            valor_total     DECIMAL(12,2) NOT NULL,
+            metodo_pago     VARCHAR(50),
+            responsable     VARCHAR(100),
+            observaciones   TEXT,
+            factura         VARCHAR(100),
+            creado_por      VARCHAR(100),
+            creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            modificado_por  VARCHAR(100),
+            modificado_en   TIMESTAMP
+        )
+    """)
+
     c.execute("CREATE INDEX IF NOT EXISTS idx_act_fecha_limite ON actividades(fecha_limite)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_act_completada ON actividades(completada)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_usuarios_user ON usuarios(username)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_finanzas_fecha ON finanzas(fecha_compra)")
 
     conn.commit()
     conn.close()
-    print(f"✅ Tablas del cronograma creadas en esquema '{SCHEMA}'")
-    print("✅ Las tablas de Dulce Tentación NO fueron tocadas (están en 'public')")
+    print(f"✅ BD inicializada con finanzas y roles")
 
 
-# Inicializar al arrancar
 try:
     init_db()
 except Exception as e:
-    print(f"⚠️ Error al inicializar: {e}")
+    print(f"⚠️ Error BD: {e}")
 
 
 # ============================================================
-# RUTAS
+# RUTAS PRINCIPALES
 # ============================================================
 @app.route("/")
 def index():
@@ -127,10 +144,14 @@ def registrar():
     nombre = data.get("nombre", "").strip()
     user   = data.get("user", "").strip().lower()
     cargo  = data.get("cargo", "").strip()
+    rol    = data.get("rol", "miembro")  # Nuevo campo
     pwd    = data.get("pass", "")
 
     if not all([nombre, user, cargo, pwd]):
         return jsonify({"ok": False, "error": "Faltan campos obligatorios"})
+
+    if " " in user or not user.isalnum():
+        return jsonify({"ok": False, "error": "Usuario solo puede tener letras y números sin espacios"})
 
     if len(pwd) < 4:
         return jsonify({"ok": False, "error": "Contraseña mínimo 4 caracteres"})
@@ -139,8 +160,7 @@ def registrar():
     c = conn.cursor()
 
     c.execute("SELECT COUNT(*) FROM usuarios")
-    count = c.fetchone()[0]
-    if count >= MAX_USUARIOS:
+    if c.fetchone()[0] >= MAX_USUARIOS:
         conn.close()
         return jsonify({"ok": False, "error": f"Límite de {MAX_USUARIOS} usuarios"})
 
@@ -151,8 +171,8 @@ def registrar():
 
     hashed = generate_password_hash(pwd, method='pbkdf2:sha256')
     c.execute(
-        "INSERT INTO usuarios (username, nombre, cargo, password) VALUES (%s, %s, %s, %s)",
-        (user, nombre, cargo, hashed)
+        "INSERT INTO usuarios (username, nombre, cargo, rol, password) VALUES (%s, %s, %s, %s, %s)",
+        (user, nombre, cargo, rol, hashed)
     )
     conn.commit()
     conn.close()
@@ -178,7 +198,8 @@ def login():
                 "id": row["id"],
                 "user": row["username"],
                 "nombre": row["nombre"],
-                "cargo": row["cargo"]
+                "cargo": row["cargo"],
+                "rol": row["rol"]  # Incluir rol
             }
         })
 
@@ -199,12 +220,9 @@ def listar_actividades():
     result = []
     for r in rows:
         row_dict = dict(r)
-        if row_dict.get('fecha_inicio'):
-            row_dict['fecha_inicio'] = str(row_dict['fecha_inicio'])
-        if row_dict.get('fecha_limite'):
-            row_dict['fecha_limite'] = str(row_dict['fecha_limite'])
-        if row_dict.get('fecha_completado'):
-            row_dict['fecha_completado'] = str(row_dict['fecha_completado'])
+        for campo in ['fecha_inicio', 'fecha_limite', 'fecha_completado']:
+            if row_dict.get(campo):
+                row_dict[campo] = str(row_dict[campo])
         result.append(row_dict)
 
     return jsonify(result)
@@ -220,12 +238,9 @@ def obtener_actividad(act_id):
 
     if row:
         row_dict = dict(row)
-        if row_dict.get('fecha_inicio'):
-            row_dict['fecha_inicio'] = str(row_dict['fecha_inicio'])
-        if row_dict.get('fecha_limite'):
-            row_dict['fecha_limite'] = str(row_dict['fecha_limite'])
-        if row_dict.get('fecha_completado'):
-            row_dict['fecha_completado'] = str(row_dict['fecha_completado'])
+        for campo in ['fecha_inicio', 'fecha_limite', 'fecha_completado']:
+            if row_dict.get(campo):
+                row_dict[campo] = str(row_dict[campo])
         return jsonify(row_dict)
 
     return jsonify({"error": "No encontrada"}), 404
@@ -247,11 +262,12 @@ def crear_actividad():
     c = conn.cursor()
     c.execute("""
         INSERT INTO actividades
-            (nombre, descripcion, responsable, fecha_inicio, fecha_limite, prioridad, creada_por)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (nombre, descripcion, detalles, responsable, fecha_inicio, fecha_limite, prioridad, creada_por)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         nombre,
         data.get("descripcion", ""),
+        data.get("detalles", ""),
         responsable,
         fecha_inicio,
         fecha_limite,
@@ -281,12 +297,13 @@ def editar_actividad(act_id):
     data = request.get_json()
     c.execute("""
         UPDATE actividades
-        SET nombre = %s, descripcion = %s, responsable = %s,
+        SET nombre = %s, descripcion = %s, detalles = %s, responsable = %s,
             fecha_inicio = %s, fecha_limite = %s, prioridad = %s
         WHERE id = %s
     """, (
         data.get("nombre"),
         data.get("descripcion", ""),
+        data.get("detalles", ""),
         data.get("responsable"),
         data.get("fecha_inicio"),
         data.get("fecha_limite"),
@@ -302,6 +319,7 @@ def editar_actividad(act_id):
 def completar_actividad(act_id):
     data = request.get_json()
     fecha_comp = data.get("fecha_completado", "")
+    observaciones = data.get("observaciones", "")
     completada_por = data.get("completada_por", "")
 
     if not fecha_comp:
@@ -322,9 +340,9 @@ def completar_actividad(act_id):
 
     c.execute("""
         UPDATE actividades
-        SET completada = TRUE, fecha_completado = %s, completada_por = %s
+        SET completada = TRUE, fecha_completado = %s, observaciones = %s, completada_por = %s
         WHERE id = %s
-    """, (fecha_comp, completada_por, act_id))
+    """, (fecha_comp, observaciones, completada_por, act_id))
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
@@ -338,6 +356,233 @@ def eliminar_actividad(act_id):
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
+
+
+# ============================================================
+# API — FINANZAS
+# ============================================================
+@app.route("/api/finanzas", methods=["GET"])
+def listar_finanzas():
+    conn = get_db()
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT * FROM finanzas ORDER BY fecha_compra DESC")
+    rows = c.fetchall()
+    conn.close()
+
+    result = []
+    for r in rows:
+        row_dict = dict(r)
+        if row_dict.get('fecha_compra'):
+            row_dict['fecha_compra'] = str(row_dict['fecha_compra'])
+        # Convertir Decimal a float para JSON
+        for campo in ['valor_unitario', 'valor_total']:
+            if row_dict.get(campo):
+                row_dict[campo] = float(row_dict[campo])
+        result.append(row_dict)
+
+    return jsonify(result)
+
+
+@app.route("/api/finanzas", methods=["POST"])
+def crear_finanza():
+    data = request.get_json()
+
+    fecha = data.get("fecha_compra", "")
+    concepto = data.get("concepto", "").strip()
+    valor_unitario = data.get("valor_unitario", 0)
+    cantidad = data.get("cantidad", 1)
+
+    if not all([fecha, concepto, valor_unitario]):
+        return jsonify({"ok": False, "error": "Faltan campos obligatorios"})
+
+    valor_total = float(valor_unitario) * int(cantidad)
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO finanzas
+            (fecha_compra, concepto, categoria, proveedor, cantidad, valor_unitario, 
+             valor_total, metodo_pago, responsable, observaciones, factura, creado_por)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        fecha,
+        concepto,
+        data.get("categoria", ""),
+        data.get("proveedor", ""),
+        cantidad,
+        valor_unitario,
+        valor_total,
+        data.get("metodo_pago", ""),
+        data.get("responsable", ""),
+        data.get("observaciones", ""),
+        data.get("factura", ""),
+        data.get("creado_por", "")
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/finanzas/<int:fin_id>", methods=["PUT"])
+def editar_finanza(fin_id):
+    data = request.get_json()
+
+    valor_unitario = data.get("valor_unitario", 0)
+    cantidad = data.get("cantidad", 1)
+    valor_total = float(valor_unitario) * int(cantidad)
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE finanzas
+        SET fecha_compra = %s, concepto = %s, categoria = %s, proveedor = %s,
+            cantidad = %s, valor_unitario = %s, valor_total = %s,
+            metodo_pago = %s, responsable = %s, observaciones = %s, factura = %s,
+            modificado_por = %s, modificado_en = CURRENT_TIMESTAMP
+        WHERE id = %s
+    """, (
+        data.get("fecha_compra"),
+        data.get("concepto"),
+        data.get("categoria", ""),
+        data.get("proveedor", ""),
+        cantidad,
+        valor_unitario,
+        valor_total,
+        data.get("metodo_pago", ""),
+        data.get("responsable", ""),
+        data.get("observaciones", ""),
+        data.get("factura", ""),
+        data.get("modificado_por", ""),
+        fin_id
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/finanzas/<int:fin_id>", methods=["DELETE"])
+def eliminar_finanza(fin_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM finanzas WHERE id = %s", (fin_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/finanzas/total")
+def total_finanzas():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT SUM(valor_total) FROM finanzas")
+    total = c.fetchone()[0] or 0
+    conn.close()
+    return jsonify({"total": float(total)})
+
+
+# ============================================================
+# EXPORTAR A EXCEL
+# ============================================================
+@app.route("/api/exportar/excel")
+def exportar_excel():
+    if not EXCEL_AVAILABLE:
+        return jsonify({"error": "openpyxl no instalado"}), 500
+
+    # Crear workbook con 2 hojas
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # Eliminar hoja por defecto
+
+    # HOJA 1: ACTIVIDADES (Estilo Gantt)
+    ws_act = wb.create_sheet("Actividades")
+    
+    # Estilos
+    header_fill = PatternFill(start_color="003B71", end_color="003B71", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # Headers
+    headers = ["Actividad", "Responsable", "Fecha Inicio", "Fecha Límite", "Estado", "Observaciones"]
+    for col_num, header in enumerate(headers, 1):
+        cell = ws_act.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    # Datos
+    conn = get_db()
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT * FROM actividades ORDER BY fecha_limite ASC")
+    actividades = c.fetchall()
+
+    for row_num, act in enumerate(actividades, 2):
+        estado = "✅ Completada" if act['completada'] else "⏳ En proceso"
+        
+        ws_act.cell(row=row_num, column=1, value=act['nombre']).border = border
+        ws_act.cell(row=row_num, column=2, value=act['responsable']).border = border
+        ws_act.cell(row=row_num, column=3, value=str(act['fecha_inicio'])).border = border
+        ws_act.cell(row=row_num, column=4, value=str(act['fecha_limite'])).border = border
+        ws_act.cell(row=row_num, column=5, value=estado).border = border
+        ws_act.cell(row=row_num, column=6, value=act['observaciones'] or "").border = border
+
+    # Ajustar anchos
+    ws_act.column_dimensions['A'].width = 40
+    ws_act.column_dimensions['B'].width = 20
+    ws_act.column_dimensions['C'].width = 15
+    ws_act.column_dimensions['D'].width = 15
+    ws_act.column_dimensions['E'].width = 15
+    ws_act.column_dimensions['F'].width = 40
+
+    # HOJA 2: FINANZAS
+    ws_fin = wb.create_sheet("Finanzas")
+    
+    fin_headers = ["Fecha", "Concepto", "Categoría", "Proveedor", "Cantidad", "V. Unitario", "V. Total", "Método Pago"]
+    for col_num, header in enumerate(fin_headers, 1):
+        cell = ws_fin.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    c.execute("SELECT * FROM finanzas ORDER BY fecha_compra DESC")
+    finanzas = c.fetchall()
+    conn.close()
+
+    for row_num, fin in enumerate(finanzas, 2):
+        ws_fin.cell(row=row_num, column=1, value=str(fin['fecha_compra'])).border = border
+        ws_fin.cell(row=row_num, column=2, value=fin['concepto']).border = border
+        ws_fin.cell(row=row_num, column=3, value=fin['categoria'] or "").border = border
+        ws_fin.cell(row=row_num, column=4, value=fin['proveedor'] or "").border = border
+        ws_fin.cell(row=row_num, column=5, value=fin['cantidad']).border = border
+        ws_fin.cell(row=row_num, column=6, value=float(fin['valor_unitario'])).border = border
+        ws_fin.cell(row=row_num, column=7, value=float(fin['valor_total'])).border = border
+        ws_fin.cell(row=row_num, column=8, value=fin['metodo_pago'] or "").border = border
+
+    ws_fin.column_dimensions['A'].width = 12
+    ws_fin.column_dimensions['B'].width = 35
+    ws_fin.column_dimensions['C'].width = 15
+    ws_fin.column_dimensions['D'].width = 20
+    ws_fin.column_dimensions['E'].width = 10
+    ws_fin.column_dimensions['F'].width = 12
+    ws_fin.column_dimensions['G'].width = 12
+    ws_fin.column_dimensions['H'].width = 15
+
+    # Guardar en memoria
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f'cronograma_utb_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    )
 
 
 # ============================================================
