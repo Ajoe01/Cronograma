@@ -1,11 +1,14 @@
 /* =============================================
-   CRONOGRAMA UTB — app.js (ACTUALIZADO)
+   CRONOGRAMA UTB v2 — app.js
+   Con finanzas, roles y exportación
    ============================================= */
 
-let me        = null;   // usuario activo
-let editId    = null;   // id de actividad en edición
-let pendiente = null;   // id pendiente de completar
+let me = null;
+let editId = null;
+let editFinId = null;
+let pendiente = null;
 let filtroAct = 'todas';
+let tabActual = 'actividades';
 
 // ==================== TABS LOGIN ====================
 function switchTab(t) {
@@ -13,7 +16,7 @@ function switchTab(t) {
     b.classList.toggle('active', (i === 0 && t === 'login') || (i === 1 && t === 'reg'))
   );
   document.getElementById('tabLogin').style.display = t === 'login' ? '' : 'none';
-  document.getElementById('tabReg').style.display   = t === 'reg'   ? '' : 'none';
+  document.getElementById('tabReg').style.display = t === 'reg' ? '' : 'none';
   if (t === 'reg') actualizarContador();
 }
 
@@ -26,22 +29,25 @@ function actualizarContador() {
 // ==================== REGISTRO ====================
 function registrar() {
   const nombre = document.getElementById('rNombre').value.trim();
-  const user   = document.getElementById('rUser').value.trim().toLowerCase().replace(/\s+/g, '');
-  const cargo  = document.getElementById('rCargo').value;
-  const pass   = document.getElementById('rPass').value;
-  const pass2  = document.getElementById('rPass2').value;
-  const msg    = document.getElementById('rMsg');
+  const user = document.getElementById('rUser').value.trim().toLowerCase();
+  const cargo = document.getElementById('rCargo').value;
+  const rol = document.getElementById('rRol').value;
+  const pass = document.getElementById('rPass').value;
+  const pass2 = document.getElementById('rPass2').value;
+  const msg = document.getElementById('rMsg');
 
   const show = (t, c) => { msg.textContent = t; msg.className = `auth-msg ${c}`; msg.style.display = 'block'; };
 
   if (!nombre || !user || !cargo || !pass || !pass2) return show('⚠️ Completa todos los campos', 'error');
-  if (pass.length < 4)  return show('⚠️ Contraseña mínimo 4 caracteres', 'error');
-  if (pass !== pass2)   return show('⚠️ Las contraseñas no coinciden', 'error');
+  if (/\s/.test(user)) return show('⚠️ El usuario no puede tener espacios', 'error');
+  if (!/^[a-z0-9]+$/.test(user)) return show('⚠️ Usuario solo letras y números', 'error');
+  if (pass.length < 4) return show('⚠️ Contraseña mínimo 4 caracteres', 'error');
+  if (pass !== pass2) return show('⚠️ Las contraseñas no coinciden', 'error');
 
   fetch('/api/usuarios/registrar', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nombre, user, cargo, pass })
+    body: JSON.stringify({ nombre, user, cargo, rol, pass })
   })
     .then(r => r.json())
     .then(d => {
@@ -50,6 +56,7 @@ function registrar() {
         setTimeout(() => switchTab('login'), 1500);
         ['rNombre', 'rUser', 'rPass', 'rPass2'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('rCargo').value = '';
+        document.getElementById('rRol').value = 'miembro';
       } else {
         show(`❌ ${d.error}`, 'error');
       }
@@ -61,7 +68,7 @@ function registrar() {
 function login() {
   const user = document.getElementById('liUser').value.trim().toLowerCase();
   const pass = document.getElementById('liPass').value;
-  const msg  = document.getElementById('liMsg');
+  const msg = document.getElementById('liMsg');
 
   fetch('/api/usuarios/login', {
     method: 'POST',
@@ -72,50 +79,84 @@ function login() {
     .then(d => {
       if (d.ok) {
         me = d.usuario;
-        localStorage.setItem("me", JSON.stringify(me));
-        document.getElementById('curUser').textContent  = me.nombre || me.user;
-        document.getElementById('curCargo').textContent = me.cargo  || '';
+        document.getElementById('curUser').textContent = me.nombre || me.user;
+        document.getElementById('curCargo').textContent = me.cargo || '';
         document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('appScreen').style.display   = 'block';
+        document.getElementById('appScreen').style.display = 'block';
         msg.style.display = 'none';
-        cargar();
+        
+        // Controlar acceso a finanzas según rol
+        if (me.rol !== 'director_financiero') {
+          document.getElementById('btnNuevaFinanza').style.display = 'none';
+        }
+        
+        cargarActividades();
+        cargarFinanzas();
       } else {
-        msg.textContent   = '❌ Usuario o contraseña incorrectos';
-        msg.className     = 'auth-msg error';
+        msg.textContent = '❌ Usuario o contraseña incorrectos';
+        msg.className = 'auth-msg error';
         msg.style.display = 'block';
         document.getElementById('liPass').value = '';
       }
     })
     .catch(() => {
-      msg.textContent   = '❌ Error de conexión';
-      msg.className     = 'auth-msg error';
+      msg.textContent = '❌ Error de conexión';
+      msg.className = 'auth-msg error';
       msg.style.display = 'block';
     });
 }
 
 function logout() {
   me = null;
-  localStorage.removeItem("me");
   document.getElementById('loginScreen').style.display = 'flex';
-  document.getElementById('appScreen').style.display   = 'none';
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('liUser').value = '';
+  document.getElementById('liPass').value = '';
+  document.getElementById('liMsg').style.display = 'none';
 }
 
-// ==================== LÓGICA DE ESTADO ====================
+// ==================== TABS NAVEGACIÓN ====================
+function cambiarTab(tab) {
+  tabActual = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+  
+  event.target.classList.add('active');
+  document.getElementById(`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).style.display = 'block';
+  
+  if (tab === 'finanzas') cargarFinanzas();
+}
+
+// ==================== ESTADO DE ACTIVIDADES ====================
 function getEstado(act) {
   if (!act.completada) return 'default';
-  const lim  = new Date(act.fecha_limite  + 'T00:00:00');
+
+  const lim = new Date(act.fecha_limite + 'T00:00:00');
   const comp = new Date(act.fecha_completado + 'T00:00:00');
-  const diff = Math.round((comp - lim) / 86400000); 
-  if (diff < -7)  return 'prematuro';
-  if (diff <= 0)  return 'tiempo';   
-  if (diff <= 7)  return 'leve';     
-  return 'tarde';                    
+  const diff = Math.round((comp - lim) / 86400000);
+
+  if (diff < -7) return 'prematuro';
+  if (diff <= 0) return 'tiempo';
+  if (diff <= 7) return 'leve';
+  return 'tarde';
 }
 
-const ELABEL = { default: 'En ejecución', prematuro: 'Prematuro 🔵', tiempo: 'A tiempo ✅', leve: 'Retraso leve', tarde: 'Retraso grave' };
-const EBADGE = { default: 'b-default', prematuro: 'b-prematuro', tiempo: 'b-tiempo', leve: 'b-leve', tarde: 'b-tarde' };
-const EROW   = { default: 'e-default', prematuro: 'e-prematuro', tiempo: 'e-tiempo', leve: 'e-leve', tarde: 'e-tarde' };
-const PRIO   = { alta: '🔴 Alta', media: '🟡 Media', baja: '🟢 Baja' };
+const ELABEL = {
+  default: 'En ejecución',
+  prematuro: 'Prematuro 🔵',
+  tiempo: 'A tiempo ✅',
+  leve: 'Retraso leve',
+  tarde: 'Retraso grave'
+};
+const EBADGE = {
+  default: 'b-default', prematuro: 'b-prematuro',
+  tiempo: 'b-tiempo', leve: 'b-leve', tarde: 'b-tarde'
+};
+const EROW = {
+  default: 'e-default', prematuro: 'e-prematuro',
+  tiempo: 'e-tiempo', leve: 'e-leve', tarde: 'e-tarde'
+};
+const PRIO = { alta: '🔴 Alta', media: '🟡 Media', baja: '🟢 Baja' };
 
 const ff = f => {
   if (!f) return '-';
@@ -123,55 +164,39 @@ const ff = f => {
   return `${d}/${m}/${y}`;
 };
 
-// ==================== MODAL ACTIVIDAD ====================
-function abrirModal(id = null) {
+// ==================== MODALES ====================
+function abrirModalActividad(id = null) {
   editId = id;
-  const inputIni = document.getElementById("aIni");
-  const inputLim = document.getElementById("aLim");
-  
   if (id !== null) {
-    // MODO EDICIÓN: Cargar y BLOQUEAR fechas
     fetch(`/api/actividades/${id}`)
       .then(r => r.json())
       .then(a => {
-        document.getElementById('mTitle').textContent = '✏️ Editar Actividad';
-        document.getElementById('aNom').value   = a.nombre;
-        document.getElementById('aDesc').value  = a.descripcion || '';
-        document.getElementById('aResp').value  = a.responsable;
-        document.getElementById('aPrio').value  = a.prioridad || 'media';
-        
-        // Mantener fechas originales y bloquear
-        inputIni.value = a.fecha_inicio || '';
-        inputLim.value = a.fecha_limite || '';
-        inputIni.readOnly = true;
-        inputLim.readOnly = true;
-        inputIni.style.backgroundColor = "#e9ecef";
-        inputLim.style.backgroundColor = "#e9ecef";
+        document.getElementById('mActTitle').textContent = '✏️ Editar Actividad';
+        document.getElementById('aNom').value = a.nombre;
+        document.getElementById('aDesc').value = a.descripcion || '';
+        document.getElementById('aDet').value = a.detalles || '';
+        document.getElementById('aResp').value = a.responsable;
+        document.getElementById('aIni').value = a.fecha_inicio || '';
+        document.getElementById('aLim').value = a.fecha_limite || '';
+        document.getElementById('aPrio').value = a.prioridad || 'media';
       });
   } else {
-    // MODO NUEVA: Limpiar y HABILITAR fechas
-    document.getElementById('mTitle').textContent = '➕ Nueva Actividad';
-    ['aNom', 'aDesc', 'aResp', 'aIni', 'aLim'].forEach(i => document.getElementById(i).value = '');
+    document.getElementById('mActTitle').textContent = '➕ Nueva Actividad';
+    ['aNom', 'aDesc', 'aDet', 'aResp', 'aIni', 'aLim'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('aPrio').value = 'media';
-    
-    inputIni.readOnly = false;
-    inputLim.readOnly = false;
-    inputIni.style.backgroundColor = "#fff";
-    inputLim.style.backgroundColor = "#fff";
   }
   document.getElementById('modalAct').classList.add('open');
-  document.getElementById('modalAct').style.display = "flex";
 }
 
-function cerrarModal() {
-  document.getElementById('modalAct').classList.remove('open');
-  document.getElementById('modalAct').style.display = "none";
-  editId = null;
+function cerrarModal(idModal) {
+  document.getElementById(idModal).classList.remove('open');
+  if (idModal === 'modalAct') editId = null;
+  if (idModal === 'modalFin') editFinId = null;
 }
 
-function guardar() {
-  const nombre      = document.getElementById('aNom').value.trim();
-  const responsable = document.getElementById('aResp').value; // Toma el valor del SELECT
+function guardarActividad() {
+  const nombre = document.getElementById('aNom').value.trim();
+  const responsable = document.getElementById('aResp').value.trim();
   const fechaInicio = document.getElementById('aIni').value;
   const fechaLimite = document.getElementById('aLim').value;
 
@@ -182,16 +207,16 @@ function guardar() {
 
   const payload = {
     nombre,
-    descripcion:  document.getElementById('aDesc').value,
+    descripcion: document.getElementById('aDesc').value,
+    detalles: document.getElementById('aDet').value,
     responsable,
     fecha_inicio: fechaInicio,
     fecha_limite: fechaLimite,
-    prioridad:    document.getElementById('aPrio').value,
-    creada_por:   me.nombre.split(" ")[0]
-
+    prioridad: document.getElementById('aPrio').value,
+    creada_por: me.user
   };
 
-  const url    = editId !== null ? `/api/actividades/${editId}` : '/api/actividades';
+  const url = editId !== null ? `/api/actividades/${editId}` : '/api/actividades';
   const method = editId !== null ? 'PUT' : 'POST';
 
   fetch(url, {
@@ -201,79 +226,159 @@ function guardar() {
   })
     .then(r => r.json())
     .then(d => {
-      if (d.ok) { cerrarModal(); cargar(); }
-      else alert(`❌ ${d.error}`);
+      if (d.ok) {
+        cerrarModal('modalAct');
+        cargarActividades();
+      } else alert(`❌ ${d.error}`);
     });
 }
 
-// ==================== COMPLETAR (ZONA HORARIA COLOMBIA) ====================
-function solicitarCompletar(id) {
-  pendiente = id;
-  fetch(`/api/actividades/${id}`)
-    .then(r => r.json())
-    .then(a => {
-      document.getElementById('confirmTxt').textContent =
-        `"${a.nombre}" — Fecha límite: ${ff(a.fecha_limite)}.`;
-      
-      // FORZAR FECHA LOCAL DE COLOMBIA EN FORMATO DD/MM/AAAA
-      const hoy = new Date();
-      const fechaLatina = hoy.toLocaleDateString('es-CO', {
-        timeZone: 'America/Bogota',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
+// ==================== COMPLETAR ACTIVIDAD ====================
+function solicitarCompletar(act) {
+  // Verificar si el usuario es el responsable
+  if (act.responsable.toLowerCase() !== me.nombre.toLowerCase() && 
+      act.responsable.toLowerCase() !== me.user.toLowerCase()) {
+    alert('⚠️ Solo el responsable de la actividad puede marcarla como completada.');
+    return;
+  }
 
-      const campoFecha = document.getElementById('fechaCompletado');
-      campoFecha.value = fechaLatina;
-      // Aseguramos que sea type text para que no cambie el orden
-      campoFecha.type = "text"; 
-
-      document.getElementById('confirmOv').classList.add('open');
-      document.getElementById('confirmOv').style.display = "flex";
-    });
+  pendiente = act.id;
+  document.getElementById('confirmTxt').textContent =
+    `"${act.nombre}" — Fecha límite: ${ff(act.fecha_limite)}. Indica la fecha real de finalización y observaciones:`;
+  document.getElementById('fechaCompletado').value = new Date().toISOString().split('T')[0];
+  document.getElementById('observaciones').value = '';
+  document.getElementById('confirmOv').classList.add('open');
 }
 
 function confirmarCompletar() {
-  let fechaComp = document.getElementById('fechaCompletado').value; // "dd/mm/aaaa"
-  if (!fechaComp) { alert('⚠️ Fecha requerida'); return; }
-
-  // Convertir dd/mm/aaaa a aaaa-mm-dd para la base de datos
-  const [d, m, y] = fechaComp.split('/');
-  const fechaISO = `${y}-${m}-${d}`;
+  const fechaComp = document.getElementById('fechaCompletado').value;
+  const obs = document.getElementById('observaciones').value.trim();
+  
+  if (!fechaComp) {
+    alert('⚠️ Selecciona la fecha de completado');
+    return;
+  }
+  if (!obs) {
+    alert('⚠️ Las observaciones de cierre son obligatorias');
+    return;
+  }
+  if (pendiente === null) return;
 
   fetch(`/api/actividades/${pendiente}/completar`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fecha_completado: fechaISO, completada_por: me.nombre.split(" ")[0]})
+    body: JSON.stringify({ 
+      fecha_completado: fechaComp, 
+      observaciones: obs,
+      completada_por: me.user 
+    })
   })
     .then(r => r.json())
     .then(d => {
-      if (d.ok) { cerrarConfirm(); cargar(); }
-      else alert(`❌ ${d.error}`);
+      if (d.ok) {
+        cerrarConfirm();
+        cargarActividades();
+      } else alert(`❌ ${d.error}`);
     });
 }
 
 function cerrarConfirm() {
   document.getElementById('confirmOv').classList.remove('open');
-  document.getElementById('confirmOv').style.display = "none";
   pendiente = null;
 }
 
-// ==================== ELIMINAR / FILTRAR / CARGAR ====================
-function eliminar(id) {
-  if (!confirm('¿Eliminar esta actividad?')) return;
-  fetch(`/api/actividades/${id}`, { method: 'DELETE' }).then(r => r.json()).then(d => { if (d.ok) cargar(); });
+// ==================== VER DETALLES ====================
+function verDetalles(id) {
+  fetch(`/api/actividades/${id}`)
+    .then(r => r.json())
+    .then(act => {
+      const estado = getEstado(act);
+      const html = `
+        <div class="detalle-section">
+          <h4>📌 ${act.nombre}</h4>
+          <p style="color:#666;font-size:.9rem;margin-top:.5rem">${act.descripcion || 'Sin descripción'}</p>
+        </div>
+
+        ${act.detalles ? `
+        <div class="detalle-section">
+          <h4>📄 Detalles</h4>
+          <p>${act.detalles}</p>
+        </div>` : ''}
+
+        <div class="detalle-grid">
+          <div class="detalle-item">
+            <strong>👤 Responsable</strong>
+            <span>${act.responsable}</span>
+          </div>
+          <div class="detalle-item">
+            <strong>🏷️ Prioridad</strong>
+            <span>${PRIO[act.prioridad]}</span>
+          </div>
+          <div class="detalle-item">
+            <strong>📅 Fecha Inicio</strong>
+            <span>${ff(act.fecha_inicio)}</span>
+          </div>
+          <div class="detalle-item">
+            <strong>⏰ Fecha Límite</strong>
+            <span>${ff(act.fecha_limite)}</span>
+          </div>
+          <div class="detalle-item">
+            <strong>📊 Estado</strong>
+            <span class="badge ${EBADGE[estado]}">${ELABEL[estado]}</span>
+          </div>
+          <div class="detalle-item">
+            <strong>👤 Creada por</strong>
+            <span>${act.creada_por || '-'}</span>
+          </div>
+        </div>
+
+        ${act.completada ? `
+        <div class="detalle-section" style="background:#e8f5e9;border-left:4px solid #2e7d32">
+          <h4>✅ Información de cierre</h4>
+          <div class="detalle-grid" style="margin-top:1rem">
+            <div class="detalle-item">
+              <strong>📅 Completada el</strong>
+              <span>${ff(act.fecha_completado)}</span>
+            </div>
+            <div class="detalle-item">
+              <strong>👤 Completada por</strong>
+              <span>${act.completada_por || '-'}</span>
+            </div>
+          </div>
+          ${act.observaciones ? `
+          <div style="margin-top:1rem;padding:1rem;background:white;border-radius:8px">
+            <strong style="display:block;margin-bottom:.5rem;color:#2e7d32">📝 Observaciones:</strong>
+            <p style="color:#555;white-space:pre-wrap">${act.observaciones}</p>
+          </div>` : ''}
+        </div>` : ''}
+      `;
+      
+      document.getElementById('detalleContent').innerHTML = html;
+      document.getElementById('modalDetalle').classList.add('open');
+    });
 }
 
+// ==================== ELIMINAR ====================
+function eliminarActividad(id) {
+  if (!confirm('¿Eliminar esta actividad? Esta acción no se puede deshacer.')) return;
+  fetch(`/api/actividades/${id}`, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(d => { if (d.ok) cargarActividades(); });
+}
+
+// ==================== FILTRAR ====================
 function filtrar(e, btn) {
   filtroAct = e;
   document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  cargar();
+  cargarActividades();
 }
 
-function cargar() {
+// CONTINÚA EN PARTE 2...
+// PARTE 2: CONTINÚA desde app.js Parte 1
+
+// ==================== CARGAR ACTIVIDADES ====================
+function cargarActividades() {
   fetch('/api/actividades')
     .then(r => r.json())
     .then(acts => {
@@ -292,53 +397,210 @@ function cargar() {
       const cont = document.getElementById('actList');
 
       if (!filtradas.length) {
-        cont.innerHTML = '<div class="empty"><div class="ei">📭</div><p>No hay actividades</p></div>';
+        cont.innerHTML = '<div class="empty"><div class="ei">📭</div><p>No hay actividades en esta categoría</p></div>';
         return;
       }
 
       cont.innerHTML = filtradas.map(a => {
         const e = getEstado(a);
         const done = a.completada;
-        const bComp = done ? `<button class="btn-a btn-lock" disabled>✅</button>` : `<button class="btn-a btn-comp" onclick="solicitarCompletar(${a.id})">✔</button>`;
-        const bEdit = done ? `<button class="btn-a btn-lock" disabled>🔒</button>` : `<button class="btn-a btn-edit" onclick="abrirModal(${a.id})">✏️</button>`;
         
+        // Control de permisos: solo el responsable puede completar
+        const esResponsable = a.responsable.toLowerCase() === me.nombre.toLowerCase() || 
+                             a.responsable.toLowerCase() === me.user.toLowerCase();
+
+        const bComp = done
+          ? `<button class="btn-a btn-lock" disabled title="Ya completada">✅</button>`
+          : esResponsable
+            ? `<button class="btn-a btn-comp" onclick='solicitarCompletar(${JSON.stringify(a)})' title="Completar">✔</button>`
+            : `<button class="btn-a btn-lock" disabled title="Solo el responsable puede completarla">🔒</button>`;
+
+        const bEdit = done
+          ? `<button class="btn-a btn-lock" disabled title="Bloqueado">🔒</button>`
+          : `<button class="btn-a btn-edit" onclick="abrirModalActividad(${a.id})" title="Editar">✏️</button>`;
+
+        const compInfo = done
+          ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${a.completada_por}</div>`
+          : '';
+
         return `
-          <div class="a-row ${EROW[e]}">
+          <div class="a-row ${EROW[e]}" onclick="verDetalles(${a.id})">
             <div>
               <div class="a-nom ${done ? 'done' : ''}">${a.nombre}</div>
+              ${a.descripcion ? `<div class="a-desc">${a.descripcion}</div>` : ''}
               <div class="a-meta">${PRIO[a.prioridad] || ''} · Creada por ${a.creada_por || '-'}</div>
-              ${done ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${a.completada_por}</div>` : ''}
+              ${compInfo}
             </div>
-            <div style="font-weight:600;color:#444;">${a.responsable}</div>
-            <div>${ff(a.fecha_inicio)}</div>
-            <div style="font-weight:600;">${ff(a.fecha_limite)}</div>
+            <div style="font-weight:600;color:#444;font-size:.88rem;">${a.responsable}</div>
+            <div style="font-size:.86rem;color:#666;">${ff(a.fecha_inicio)}</div>
+            <div style="font-size:.86rem;font-weight:600;">${ff(a.fecha_limite)}</div>
             <div><span class="badge ${EBADGE[e]}">${ELABEL[e]}</span></div>
-            <div class="acc">${bComp}${bEdit}<button class="btn-a btn-del" onclick="eliminar(${a.id})">🗑</button></div>
+            <div class="acc" onclick="event.stopPropagation()">
+              <button class="btn-a btn-view" onclick="verDetalles(${a.id})" title="Ver detalles">👁️</button>
+              ${bComp}
+              ${bEdit}
+              <button class="btn-a btn-del" onclick="eliminarActividad(${a.id})" title="Eliminar">🗑</button>
+            </div>
           </div>`;
       }).join('');
     });
 }
 
-// Clic fuera para cerrar
-window.onclick = function(event) {
-  if (event.target == document.getElementById('modalAct')) cerrarModal();
-  if (event.target == document.getElementById('confirmOv')) cerrarConfirm();
-};
-window.addEventListener("DOMContentLoaded", () => {
-  const saved = localStorage.getItem("me");
-
-  if (saved) {
-    me = JSON.parse(saved);
-
-    document.getElementById('curUser').textContent  = me.nombre || me.user;
-    document.getElementById('curCargo').textContent = me.cargo  || '';
-
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('appScreen').style.display   = 'block';
-
-    cargar();
+// ==================== FINANZAS ====================
+function abrirModalFinanza(id = null) {
+  editFinId = id;
+  if (id !== null) {
+    fetch(`/api/finanzas`)
+      .then(r => r.json())
+      .then(finanzas => {
+        const fin = finanzas.find(f => f.id === id);
+        if (!fin) return;
+        
+        document.getElementById('mFinTitle').textContent = '✏️ Editar Gasto';
+        document.getElementById('fFecha').value = fin.fecha_compra;
+        document.getElementById('fConcepto').value = fin.concepto;
+        document.getElementById('fCategoria').value = fin.categoria || '';
+        document.getElementById('fProveedor').value = fin.proveedor || '';
+        document.getElementById('fCantidad').value = fin.cantidad;
+        document.getElementById('fValorUnit').value = fin.valor_unitario;
+        document.getElementById('fValorTotal').value = `$${fin.valor_total.toLocaleString()}`;
+        document.getElementById('fMetodo').value = fin.metodo_pago || '';
+        document.getElementById('fFactura').value = fin.factura || '';
+        document.getElementById('fResponsable').value = fin.responsable || '';
+        document.getElementById('fObs').value = fin.observaciones || '';
+      });
+  } else {
+    document.getElementById('mFinTitle').textContent = '➕ Nuevo Gasto';
+    ['fFecha', 'fConcepto', 'fProveedor', 'fValorUnit', 'fFactura', 'fResponsable', 'fObs'].forEach(id => 
+      document.getElementById(id).value = '');
+    document.getElementById('fCategoria').value = '';
+    document.getElementById('fMetodo').value = '';
+    document.getElementById('fCantidad').value = 1;
+    document.getElementById('fValorTotal').value = '$0';
   }
+  document.getElementById('modalFin').classList.add('open');
+}
+
+function calcularTotalFin() {
+  const cant = parseFloat(document.getElementById('fCantidad').value) || 0;
+  const unit = parseFloat(document.getElementById('fValorUnit').value) || 0;
+  const total = cant * unit;
+  document.getElementById('fValorTotal').value = `$${total.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+}
+
+function guardarFinanza() {
+  const fecha = document.getElementById('fFecha').value;
+  const concepto = document.getElementById('fConcepto').value.trim();
+  const valorUnit = document.getElementById('fValorUnit').value;
+  const cantidad = document.getElementById('fCantidad').value;
+
+  if (!fecha || !concepto || !valorUnit) {
+    alert('⚠️ Completa los campos obligatorios');
+    return;
+  }
+
+  const payload = {
+    fecha_compra: fecha,
+    concepto,
+    categoria: document.getElementById('fCategoria').value,
+    proveedor: document.getElementById('fProveedor').value,
+    cantidad: parseInt(cantidad),
+    valor_unitario: parseFloat(valorUnit),
+    metodo_pago: document.getElementById('fMetodo').value,
+    factura: document.getElementById('fFactura').value,
+    responsable: document.getElementById('fResponsable').value,
+    observaciones: document.getElementById('fObs').value,
+    creado_por: me.user,
+    modificado_por: editFinId !== null ? me.user : undefined
+  };
+
+  const url = editFinId !== null ? `/api/finanzas/${editFinId}` : '/api/finanzas';
+  const method = editFinId !== null ? 'PUT' : 'POST';
+
+  fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        cerrarModal('modalFin');
+        cargarFinanzas();
+      } else alert(`❌ ${d.error}`);
+    });
+}
+
+function eliminarFinanza(id) {
+  if (!confirm('¿Eliminar este gasto? Esta acción no se puede deshacer.')) return;
+  fetch(`/api/finanzas/${id}`, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(d => { if (d.ok) cargarFinanzas(); });
+}
+
+function cargarFinanzas() {
+  fetch('/api/finanzas')
+    .then(r => r.json())
+    .then(finanzas => {
+      const cont = document.getElementById('finList');
+      
+      // Calcular total
+      const total = finanzas.reduce((sum, f) => sum + f.valor_total, 0);
+      document.getElementById('finTotal').textContent = 
+        `$${total.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+      if (!finanzas.length) {
+        cont.innerHTML = '<div class="empty"><div class="ei">💰</div><p>No hay gastos registrados</p></div>';
+        return;
+      }
+
+      // Solo director financiero puede editar/eliminar
+      const esDirectorFin = me.rol === 'director_financiero';
+
+      cont.innerHTML = finanzas.map(f => {
+        const bEdit = esDirectorFin
+          ? `<button class="btn-a btn-edit" onclick="abrirModalFinanza(${f.id})" title="Editar">✏️</button>`
+          : `<button class="btn-a btn-lock" disabled title="Solo Director Financiero">🔒</button>`;
+
+        const bDel = esDirectorFin
+          ? `<button class="btn-a btn-del" onclick="eliminarFinanza(${f.id})" title="Eliminar">🗑</button>`
+          : '';
+
+        return `
+          <div class="f-row">
+            <div style="font-size:.85rem;color:#666;">${ff(f.fecha_compra)}</div>
+            <div style="font-weight:600;color:#333;">${f.concepto}</div>
+            <div style="font-size:.82rem;color:#666;">${f.categoria || '-'}</div>
+            <div style="font-size:.82rem;color:#666;">${f.proveedor || '-'}</div>
+            <div style="text-align:center;font-weight:600;">${f.cantidad}</div>
+            <div style="text-align:right;color:#00843D;font-weight:600;">$${f.valor_unitario.toLocaleString()}</div>
+            <div style="text-align:right;color:#003B71;font-weight:700;font-size:1rem;">$${f.valor_total.toLocaleString()}</div>
+            <div class="acc">
+              ${bEdit}
+              ${bDel}
+            </div>
+          </div>`;
+      }).join('');
+    });
+}
+
+// ==================== EXPORTAR EXCEL ====================
+function exportarExcel() {
+  window.location.href = '/api/exportar/excel';
+}
+
+// ==================== CERRAR MODALES AL CLICK FUERA ====================
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('modalAct').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalAct')) cerrarModal('modalAct');
+  });
+  document.getElementById('modalFin').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalFin')) cerrarModal('modalFin');
+  });
+  document.getElementById('modalDetalle').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalDetalle')) cerrarModal('modalDetalle');
+  });
+  document.getElementById('confirmOv').addEventListener('click', e => {
+    if (e.target === document.getElementById('confirmOv')) cerrarConfirm();
+  });
 });
-
-
-
