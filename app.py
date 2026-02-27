@@ -540,7 +540,7 @@ def exportar_excel():
         bottom=Side(style='thin')
     )
 
-    headers = ["Actividad", "Responsable (Cargo)", "Fecha Inicio", "Fecha Límite", "Estado", "Observaciones"]
+    headers = ["Actividad", "Responsable (Cargo)", "Fecha Inicio", "Fecha Límite", "Fecha Completado", "Estado", "Observaciones"]
     for col_num, header in enumerate(headers, 1):
         cell = ws_act.cell(row=1, column=col_num, value=header)
         cell.fill = header_fill
@@ -553,22 +553,57 @@ def exportar_excel():
     c.execute("SELECT * FROM actividades ORDER BY fecha_limite ASC")
     actividades = c.fetchall()
 
+    # Colores por estado
+    COLOR_ESTADO = {
+        'prematuro': 'FF2196F3',   # Azul
+        'tiempo':    'FF4CAF50',   # Verde
+        'leve':      'FFFF9800',   # Naranja
+        'tarde':     'FFF44336',   # Rojo
+        'default':   'FFFFC107',   # Amarillo (en ejecución)
+    }
+
+    def calcular_estado(completada, fecha_limite, fecha_completado):
+        if not completada:
+            return 'default', '⏳ En ejecución'
+        from datetime import date
+        lim  = date.fromisoformat(str(fecha_limite))
+        comp = date.fromisoformat(str(fecha_completado))
+        diff = (comp - lim).days
+        if diff < -7:  return 'prematuro', '🔵 Prematuro'
+        if diff <= 0:  return 'tiempo',    '🟢 A tiempo'
+        if diff <= 7:  return 'leve',      '🟠 Retraso leve'
+        return 'tarde', '🔴 Retraso grave'
+
     for row_num, act in enumerate(actividades, 2):
-        estado = "✅ Completada" if act['completada'] else "⏳ En proceso"
-        
+        estado_key, estado_label = calcular_estado(
+            act['completada'], act['fecha_limite'], act.get('fecha_completado')
+        )
+        color_hex = COLOR_ESTADO[estado_key]
+        estado_fill = PatternFill(start_color=color_hex, end_color=color_hex, fill_type="solid")
+        # Texto negro siempre para legibilidad
+        estado_font = Font(bold=True, color="FFFFFFFF" if estado_key in ('prematuro', 'tarde') else "FF000000")
+
         ws_act.cell(row=row_num, column=1, value=act['nombre']).border = border
         ws_act.cell(row=row_num, column=2, value=act['responsable']).border = border
         ws_act.cell(row=row_num, column=3, value=str(act['fecha_inicio'])).border = border
         ws_act.cell(row=row_num, column=4, value=str(act['fecha_limite'])).border = border
-        ws_act.cell(row=row_num, column=5, value=estado).border = border
-        ws_act.cell(row=row_num, column=6, value=act['observaciones'] or "").border = border
+        ws_act.cell(row=row_num, column=5, value=str(act['fecha_completado']) if act.get('fecha_completado') else '').border = border
+
+        celda_estado = ws_act.cell(row=row_num, column=6, value=estado_label)
+        celda_estado.border = border
+        celda_estado.fill = estado_fill
+        celda_estado.font = estado_font
+        celda_estado.alignment = Alignment(horizontal="center")
+
+        ws_act.cell(row=row_num, column=7, value=act['observaciones'] or "").border = border
 
     ws_act.column_dimensions['A'].width = 40
     ws_act.column_dimensions['B'].width = 30
     ws_act.column_dimensions['C'].width = 15
     ws_act.column_dimensions['D'].width = 15
-    ws_act.column_dimensions['E'].width = 15
-    ws_act.column_dimensions['F'].width = 40
+    ws_act.column_dimensions['E'].width = 17
+    ws_act.column_dimensions['F'].width = 18
+    ws_act.column_dimensions['G'].width = 40
 
     ws_fin = wb.create_sheet("Finanzas")
     
@@ -613,6 +648,114 @@ def exportar_excel():
         as_attachment=True,
         download_name=f'cronograma_utb_{datetime.now().strftime("%Y%m%d")}.xlsx'
     )
+
+
+# ============================================================
+# ADMIN — BORRAR USUARIOS
+# ============================================================
+@app.route("/DeleteUsers")
+def delete_users_page():
+    conn = get_db()
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT id, username, nombre, cargo, creado_en FROM usuarios ORDER BY creado_en ASC")
+    usuarios = c.fetchall()
+    conn.close()
+
+    rows_html = ""
+    for u in usuarios:
+        rows_html += f"""
+        <tr>
+            <td>{u['nombre']}</td>
+            <td>{u['username']}</td>
+            <td>{u['cargo']}</td>
+            <td>{str(u['creado_en'])[:10]}</td>
+            <td>
+                <form method="POST" action="/DeleteUsers/{u['id']}" 
+                      onsubmit="return confirm('¿Eliminar a {u['nombre']}? Esta acción no se puede deshacer.')">
+                    <button type="submit">🗑 Eliminar</button>
+                </form>
+            </td>
+        </tr>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Administrar Usuarios — UTB</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Segoe UI', sans-serif; background: #f4f6f9; min-height: 100vh; }}
+  .header {{ background: #003B71; color: white; padding: 1.5rem 2rem; display: flex; align-items: center; gap: 1rem; }}
+  .header h1 {{ font-size: 1.4rem; }}
+  .header p {{ font-size: .85rem; opacity: .75; margin-top: .2rem; }}
+  .container {{ max-width: 900px; margin: 2rem auto; padding: 0 1rem; }}
+  .card {{ background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); overflow: hidden; }}
+  .card-header {{ padding: 1.2rem 1.5rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }}
+  .card-header h2 {{ font-size: 1.1rem; color: #003B71; }}
+  .count {{ background: #e8f0fe; color: #003B71; padding: .3rem .8rem; border-radius: 20px; font-size: .85rem; font-weight: 600; }}
+  table {{ width: 100%; border-collapse: collapse; }}
+  th {{ background: #f8f9fa; padding: .9rem 1.2rem; text-align: left; font-size: .82rem; color: #666; text-transform: uppercase; letter-spacing: .05em; border-bottom: 2px solid #eee; }}
+  td {{ padding: .9rem 1.2rem; border-bottom: 1px solid #f0f0f0; font-size: .9rem; color: #333; vertical-align: middle; }}
+  tr:last-child td {{ border-bottom: none; }}
+  tr:hover td {{ background: #fafbff; }}
+  button {{ background: #c62828; color: white; border: none; padding: .45rem 1rem; border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600; transition: background .2s; }}
+  button:hover {{ background: #b71c1c; }}
+  .empty {{ text-align: center; padding: 3rem; color: #999; font-size: 1rem; }}
+  .back {{ display: inline-block; margin-bottom: 1.2rem; color: #003B71; text-decoration: none; font-size: .9rem; font-weight: 600; }}
+  .back:hover {{ text-decoration: underline; }}
+  .alert {{ background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; padding: .9rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; font-weight: 600; }}
+  .cargo-tag {{ background: #e8f0fe; color: #003B71; padding: .2rem .6rem; border-radius: 12px; font-size: .8rem; font-weight: 600; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>🎓</div>
+  <div>
+    <h1>Cronograma UTB — Administrar Usuarios</h1>
+    <p>Universidad Tecnológica de Bolívar</p>
+  </div>
+</div>
+<div class="container">
+  <a class="back" href="/">← Volver a la aplicación</a>
+  <div class="card">
+    <div class="card-header">
+      <h2>👥 Usuarios registrados</h2>
+      <span class="count">{len(usuarios)} / 5</span>
+    </div>
+    {'<table><thead><tr><th>Nombre</th><th>Usuario</th><th>Cargo / Rol</th><th>Registrado</th><th>Acción</th></tr></thead><tbody>' + rows_html + '</tbody></table>' if usuarios else '<div class="empty">No hay usuarios registrados.</div>'}
+  </div>
+</div>
+</body>
+</html>"""
+
+
+@app.route("/DeleteUsers/<int:user_id>", methods=["POST"])
+def delete_user(user_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM usuarios WHERE id = %s", (user_id,))
+    conn.commit()
+    conn.close()
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="1;url=/DeleteUsers">
+<style>
+  body {{ font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f4f6f9; }}
+  .msg {{ background: white; padding: 2rem 3rem; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.1); text-align: center; }}
+  .msg h2 {{ color: #2e7d32; margin-bottom: .5rem; }}
+  .msg p {{ color: #666; font-size: .9rem; }}
+</style>
+</head>
+<body>
+<div class="msg">
+  <h2>✅ Usuario eliminado</h2>
+  <p>Redirigiendo...</p>
+</div>
+</body>
+</html>"""
 
 
 # ============================================================
