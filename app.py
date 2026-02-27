@@ -663,11 +663,11 @@ def exportar_excel():
             "tiempo":    "4CAF50",
             "leve":      "FF9800",
             "tarde":     "F44336",
-            "default":   "95A5A6",
+            "default":   "FFC107",
         }
 
         def g_estado(act):
-            if not act["completada"]: return "default"
+            if not act["completada"]: return "FFC107"
             lim  = date.fromisoformat(str(act["fecha_limite"]))
             comp = date.fromisoformat(str(act["fecha_completado"]))
             diff = (comp - lim).days
@@ -804,7 +804,7 @@ def exportar_excel():
         lc.fill = PatternFill("solid", start_color=G_BG)
 
         ley_items = [
-            ("En ejecución",  "95A5A6"),
+            ("En ejecución",  "FFC107"),
             ("Prematuro",     ESTADO_BAR["prematuro"]),
             ("A tiempo",      ESTADO_BAR["tiempo"]),
             ("Retraso leve",  ESTADO_BAR["leve"]),
@@ -946,3 +946,4 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
