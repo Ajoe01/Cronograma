@@ -654,7 +654,7 @@ def exportar_excel():
         BARRA_COLORS = {
             "Director de Proyecto":             "27AE60",
             "Director de Procesos Mecanicos":   "F39C12",
-            "Director de Procesos Electronicos":"3498DB",
+            "Director de Procesos Electronicos":"FFC107",
             "Diseñador de Sistemas de Control": "9B59B6",
             "Director Financiero":              "E74C3C",
         }
@@ -946,5 +946,6 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
