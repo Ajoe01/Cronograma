@@ -663,7 +663,7 @@ def exportar_excel():
             "tiempo":    "4CAF50",
             "leve":      "FF9800",
             "tarde":     "F44336",
-            "default":   "95A5A6",
+            "default":   "FFC107",
         }
 
         def g_estado(act):
@@ -946,3 +946,4 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
