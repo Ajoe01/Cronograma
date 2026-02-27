@@ -29,6 +29,24 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 SCHEMA = "cronograma"
 MAX_USUARIOS = 5
 
+# Cargos válidos del equipo (cargo = rol)
+CARGOS_VALIDOS = [
+    "Director de Proyecto",
+    "Director de Procesos Mecanicos",
+    "Director de Procesos Electronicos",
+    "Diseñador de Sistemas de Control",
+    "Director Financiero"
+]
+
+def cargo_a_rol(cargo):
+    """Deriva el rol del sistema a partir del cargo."""
+    if cargo == "Director Financiero":
+        return "director_financiero"
+    elif cargo == "Director de Proyecto":
+        return "coordinador"
+    else:
+        return "miembro"
+
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -43,7 +61,6 @@ def init_db():
     c = conn.cursor()
 
     c.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-
     c.execute(f"SET search_path TO {SCHEMA}, public")
 
     # Tabla usuarios CON ROL
@@ -138,17 +155,30 @@ def count_usuarios():
     return jsonify({"count": count})
 
 
+@app.route("/api/usuarios/listar")
+def listar_usuarios():
+    """Devuelve lista de usuarios con nombre y cargo para los selects de responsable."""
+    conn = get_db()
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT username, nombre, cargo FROM usuarios ORDER BY nombre ASC")
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route("/api/usuarios/registrar", methods=["POST"])
 def registrar():
     data = request.get_json()
     nombre = data.get("nombre", "").strip()
     user   = data.get("user", "").strip().lower()
     cargo  = data.get("cargo", "").strip()
-    rol    = data.get("rol", "miembro")  # Nuevo campo
     pwd    = data.get("pass", "")
 
     if not all([nombre, user, cargo, pwd]):
         return jsonify({"ok": False, "error": "Faltan campos obligatorios"})
+
+    if cargo not in CARGOS_VALIDOS:
+        return jsonify({"ok": False, "error": "Cargo no válido"})
 
     if " " in user or not user.isalnum():
         return jsonify({"ok": False, "error": "Usuario solo puede tener letras y números sin espacios"})
@@ -164,10 +194,19 @@ def registrar():
         conn.close()
         return jsonify({"ok": False, "error": f"Límite de {MAX_USUARIOS} usuarios"})
 
+    # Verificar que el cargo no esté ya registrado (1 usuario por cargo)
+    c.execute("SELECT id FROM usuarios WHERE cargo = %s", (cargo,))
+    if c.fetchone():
+        conn.close()
+        return jsonify({"ok": False, "error": f"Ya existe un usuario con el cargo '{cargo}'"})
+
     c.execute("SELECT id FROM usuarios WHERE username = %s", (user,))
     if c.fetchone():
         conn.close()
         return jsonify({"ok": False, "error": "Usuario ya existe"})
+
+    # El rol se deriva automáticamente del cargo
+    rol = cargo_a_rol(cargo)
 
     hashed = generate_password_hash(pwd, method='pbkdf2:sha256')
     c.execute(
@@ -199,7 +238,7 @@ def login():
                 "user": row["username"],
                 "nombre": row["nombre"],
                 "cargo": row["cargo"],
-                "rol": row["rol"]  # Incluir rol
+                "rol": row["rol"]
             }
         })
 
@@ -374,7 +413,6 @@ def listar_finanzas():
         row_dict = dict(r)
         if row_dict.get('fecha_compra'):
             row_dict['fecha_compra'] = str(row_dict['fecha_compra'])
-        # Convertir Decimal a float para JSON
         for campo in ['valor_unitario', 'valor_total']:
             if row_dict.get(campo):
                 row_dict[campo] = float(row_dict[campo])
@@ -488,14 +526,11 @@ def exportar_excel():
     if not EXCEL_AVAILABLE:
         return jsonify({"error": "openpyxl no instalado"}), 500
 
-    # Crear workbook con 2 hojas
     wb = openpyxl.Workbook()
-    wb.remove(wb.active)  # Eliminar hoja por defecto
+    wb.remove(wb.active)
 
-    # HOJA 1: ACTIVIDADES (Estilo Gantt)
     ws_act = wb.create_sheet("Actividades")
     
-    # Estilos
     header_fill = PatternFill(start_color="003B71", end_color="003B71", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     border = Border(
@@ -505,8 +540,7 @@ def exportar_excel():
         bottom=Side(style='thin')
     )
 
-    # Headers
-    headers = ["Actividad", "Responsable", "Fecha Inicio", "Fecha Límite", "Estado", "Observaciones"]
+    headers = ["Actividad", "Responsable (Cargo)", "Fecha Inicio", "Fecha Límite", "Estado", "Observaciones"]
     for col_num, header in enumerate(headers, 1):
         cell = ws_act.cell(row=1, column=col_num, value=header)
         cell.fill = header_fill
@@ -514,7 +548,6 @@ def exportar_excel():
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
 
-    # Datos
     conn = get_db()
     c = conn.cursor(cursor_factory=RealDictCursor)
     c.execute("SELECT * FROM actividades ORDER BY fecha_limite ASC")
@@ -530,15 +563,13 @@ def exportar_excel():
         ws_act.cell(row=row_num, column=5, value=estado).border = border
         ws_act.cell(row=row_num, column=6, value=act['observaciones'] or "").border = border
 
-    # Ajustar anchos
     ws_act.column_dimensions['A'].width = 40
-    ws_act.column_dimensions['B'].width = 20
+    ws_act.column_dimensions['B'].width = 30
     ws_act.column_dimensions['C'].width = 15
     ws_act.column_dimensions['D'].width = 15
     ws_act.column_dimensions['E'].width = 15
     ws_act.column_dimensions['F'].width = 40
 
-    # HOJA 2: FINANZAS
     ws_fin = wb.create_sheet("Finanzas")
     
     fin_headers = ["Fecha", "Concepto", "Categoría", "Proveedor", "Cantidad", "V. Unitario", "V. Total", "Método Pago"]
@@ -572,7 +603,6 @@ def exportar_excel():
     ws_fin.column_dimensions['G'].width = 12
     ws_fin.column_dimensions['H'].width = 15
 
-    # Guardar en memoria
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
