@@ -299,10 +299,12 @@ function solicitarCompletar(act) {
   document.getElementById('confirmTxt').textContent =
     `"${act.nombre}" — Fecha límite: ${ff(act.fecha_limite)}. Ingresa las observaciones de cierre:`;
 
-  // Fecha de hoy fija, no editable
+  // Fecha de hoy fija usando hora local (evita desfase UTC)
   const hoy = new Date();
-  const hoyISO = hoy.toISOString().split('T')[0];
-  const [y, m, d] = hoyISO.split('-');
+  const y = hoy.getFullYear();
+  const m = String(hoy.getMonth() + 1).padStart(2, '0');
+  const d = String(hoy.getDate()).padStart(2, '0');
+  const hoyISO = `${y}-${m}-${d}`;
   document.getElementById('fechaCompletado').value = hoyISO;
   document.getElementById('fechaCompletadoDisplay').textContent = `${d}/${m}/${y} (hoy)`;
 
