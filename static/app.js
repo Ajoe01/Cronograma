@@ -9,10 +9,9 @@ let editFinId = null;
 let pendiente = null;
 let filtroAct = 'todas';
 let tabActual = 'actividades';
-let usuariosCache = []; // Cache de usuarios registrados
+let usuariosCache = [];
 
 // ==================== UTILIDADES ====================
-// Primera letra en mayúscula
 function capitalizar(str) {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
@@ -51,7 +50,6 @@ function registrar() {
   if (pass.length < 4) return show('⚠️ Contraseña mínimo 4 caracteres', 'error');
   if (pass !== pass2) return show('⚠️ Las contraseñas no coinciden', 'error');
 
-  // El rol se deriva automáticamente del cargo
   const rol = cargo === 'Director Financiero' ? 'director_financiero'
     : cargo === 'Director de Proyecto' ? 'coordinador'
     : 'miembro';
@@ -90,22 +88,9 @@ function login() {
     .then(d => {
       if (d.ok) {
         me = d.usuario;
-        document.getElementById('curUser').textContent = capitalizar(me.nombre || me.user);
-        document.getElementById('curCargo').textContent = me.cargo || '';
-        document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('appScreen').style.display = 'block';
+        localStorage.setItem('utb_session', JSON.stringify(me));
         msg.style.display = 'none';
-        
-        // Controlar acceso a finanzas según rol
-        if (me.rol !== 'director_financiero') {
-          document.getElementById('btnNuevaFinanza').style.display = 'none';
-        }
-        
-        // Cargar usuarios para los selects de responsable
-        cargarUsuarios().then(() => {
-          cargarActividades();
-          cargarFinanzas();
-        });
+        entrarApp();
       } else {
         msg.textContent = '❌ Usuario o contraseña incorrectos';
         msg.className = 'auth-msg error';
@@ -120,9 +105,26 @@ function login() {
     });
 }
 
+function entrarApp() {
+  document.getElementById('curUser').textContent = capitalizar(me.nombre || me.user);
+  document.getElementById('curCargo').textContent = me.cargo || '';
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  if (me.rol !== 'director_financiero') {
+    document.getElementById('btnNuevaFinanza').style.display = 'none';
+  } else {
+    document.getElementById('btnNuevaFinanza').style.display = '';
+  }
+  cargarUsuarios().then(() => {
+    cargarActividades();
+    cargarFinanzas();
+  });
+}
+
 function logout() {
   me = null;
   usuariosCache = [];
+  localStorage.removeItem('utb_session');
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appScreen').style.display = 'none';
   document.getElementById('liUser').value = '';
@@ -136,12 +138,10 @@ function cargarUsuarios() {
     .then(r => r.json())
     .then(usuarios => {
       usuariosCache = usuarios;
-      // Llenar todos los selects de responsable
       llenarSelectResponsable('aResp');
       llenarSelectResponsable('fResponsable');
     })
     .catch(() => {
-      // Si falla, al menos poner el usuario actual
       usuariosCache = [{ nombre: me.nombre, cargo: me.cargo, username: me.user }];
       llenarSelectResponsable('aResp');
       llenarSelectResponsable('fResponsable');
@@ -154,7 +154,6 @@ function llenarSelectResponsable(selectId, valorActual = '') {
   sel.innerHTML = '<option value="">-- Selecciona el responsable --</option>';
   usuariosCache.forEach(u => {
     const opt = document.createElement('option');
-    // El value es el cargo, el texto muestra nombre + cargo
     opt.value = u.cargo;
     opt.textContent = `${capitalizar(u.nombre)} — ${u.cargo}`;
     if (valorActual && (u.cargo === valorActual || capitalizar(u.nombre) === valorActual || u.nombre === valorActual)) {
@@ -169,21 +168,17 @@ function cambiarTab(tab) {
   tabActual = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
-  
   event.target.classList.add('active');
   document.getElementById(`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).style.display = 'block';
-  
   if (tab === 'finanzas') cargarFinanzas();
 }
 
 // ==================== ESTADO DE ACTIVIDADES ====================
 function getEstado(act) {
   if (!act.completada) return 'default';
-
   const lim = new Date(act.fecha_limite + 'T00:00:00');
   const comp = new Date(act.fecha_completado + 'T00:00:00');
   const diff = Math.round((comp - lim) / 86400000);
-
   if (diff < -7) return 'prematuro';
   if (diff <= 0) return 'tiempo';
   if (diff <= 7) return 'leve';
@@ -216,7 +211,6 @@ const ff = f => {
 // ==================== MODALES ====================
 function abrirModalActividad(id = null) {
   editId = id;
-  // Refrescar el select de responsable
   llenarSelectResponsable('aResp');
 
   if (id !== null) {
@@ -227,7 +221,6 @@ function abrirModalActividad(id = null) {
         document.getElementById('aNom').value = a.nombre;
         document.getElementById('aDesc').value = a.descripcion || '';
         document.getElementById('aDet').value = a.detalles || '';
-        // Seleccionar el responsable en el select por cargo o nombre
         llenarSelectResponsable('aResp', a.responsable);
         document.getElementById('aIni').value = a.fecha_inicio || '';
         document.getElementById('aLim').value = a.fecha_limite || '';
@@ -250,7 +243,7 @@ function cerrarModal(idModal) {
 
 function guardarActividad() {
   const nombre = document.getElementById('aNom').value.trim();
-  const responsable = document.getElementById('aResp').value; // cargo seleccionado
+  const responsable = document.getElementById('aResp').value;
   const fechaInicio = document.getElementById('aIni').value;
   const fechaLimite = document.getElementById('aLim').value;
 
@@ -289,7 +282,6 @@ function guardarActividad() {
 
 // ==================== COMPLETAR ACTIVIDAD ====================
 function solicitarCompletar(act) {
-  // El responsable es el cargo; verificar si el usuario logueado tiene ese cargo
   if (act.responsable !== me.cargo) {
     alert('⚠️ Solo el responsable de la actividad puede marcarla como completada.');
     return;
@@ -299,7 +291,6 @@ function solicitarCompletar(act) {
   document.getElementById('confirmTxt').textContent =
     `"${act.nombre}" — Fecha límite: ${ff(act.fecha_limite)}. Ingresa las observaciones de cierre:`;
 
-  // Fecha de hoy fija usando hora local (evita desfase UTC)
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -315,7 +306,7 @@ function solicitarCompletar(act) {
 function confirmarCompletar() {
   const fechaComp = document.getElementById('fechaCompletado').value;
   const obs = document.getElementById('observaciones').value.trim();
-  
+
   if (!fechaComp) {
     alert('⚠️ Selecciona la fecha de completado');
     return;
@@ -329,10 +320,10 @@ function confirmarCompletar() {
   fetch(`/api/actividades/${pendiente}/completar`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      fecha_completado: fechaComp, 
+    body: JSON.stringify({
+      fecha_completado: fechaComp,
       observaciones: obs,
-      completada_por: me.user 
+      completada_por: me.user
     })
   })
     .then(r => r.json())
@@ -355,7 +346,6 @@ function verDetalles(id) {
     .then(r => r.json())
     .then(act => {
       const estado = getEstado(act);
-      // Buscar el nombre del usuario con ese cargo para mostrarlo
       const usuResp = usuariosCache.find(u => u.cargo === act.responsable);
       const nombreResp = usuResp ? capitalizar(usuResp.nombre) : act.responsable;
 
@@ -418,7 +408,7 @@ function verDetalles(id) {
           </div>` : ''}
         </div>` : ''}
       `;
-      
+
       document.getElementById('detalleContent').innerHTML = html;
       document.getElementById('modalDetalle').classList.add('open');
     });
@@ -467,11 +457,7 @@ function cargarActividades() {
       cont.innerHTML = filtradas.map(a => {
         const e = getEstado(a);
         const done = a.completada;
-        
-        // El responsable ahora es un cargo; verificar si el usuario logueado tiene ese cargo
         const esResponsable = a.responsable === me.cargo;
-
-        // Buscar nombre del responsable en cache
         const usuResp = usuariosCache.find(u => u.cargo === a.responsable);
         const nombreResp = usuResp ? capitalizar(usuResp.nombre) : a.responsable;
 
@@ -518,7 +504,6 @@ function cargarActividades() {
 // ==================== FINANZAS ====================
 function abrirModalFinanza(id = null) {
   editFinId = id;
-  // Refrescar select de responsable
   llenarSelectResponsable('fResponsable');
 
   if (id !== null) {
@@ -527,7 +512,7 @@ function abrirModalFinanza(id = null) {
       .then(finanzas => {
         const fin = finanzas.find(f => f.id === id);
         if (!fin) return;
-        
+
         document.getElementById('mFinTitle').textContent = '✏️ Editar Gasto';
         document.getElementById('fFecha').value = fin.fecha_compra;
         document.getElementById('fConcepto').value = fin.concepto;
@@ -543,7 +528,7 @@ function abrirModalFinanza(id = null) {
       });
   } else {
     document.getElementById('mFinTitle').textContent = '➕ Nuevo Gasto';
-    ['fFecha', 'fConcepto', 'fProveedor', 'fValorUnit', 'fFactura', 'fObs'].forEach(id => 
+    ['fFecha', 'fConcepto', 'fProveedor', 'fValorUnit', 'fFactura', 'fObs'].forEach(id =>
       document.getElementById(id).value = '');
     document.getElementById('fCategoria').value = '';
     document.getElementById('fMetodo').value = '';
@@ -558,7 +543,7 @@ function calcularTotalFin() {
   const cant = parseFloat(document.getElementById('fCantidad').value) || 0;
   const unit = parseFloat(document.getElementById('fValorUnit').value) || 0;
   const total = cant * unit;
-  document.getElementById('fValorTotal').value = `$${total.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+  document.getElementById('fValorTotal').value = `$${total.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function guardarFinanza() {
@@ -616,22 +601,19 @@ function cargarFinanzas() {
     .then(r => r.json())
     .then(finanzas => {
       const cont = document.getElementById('finList');
-      
-      // Calcular total
+
       const total = finanzas.reduce((sum, f) => sum + f.valor_total, 0);
-      document.getElementById('finTotal').textContent = 
-        `$${total.toLocaleString('es-CO', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      document.getElementById('finTotal').textContent =
+        `$${total.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
       if (!finanzas.length) {
         cont.innerHTML = '<div class="empty"><div class="ei">💰</div><p>No hay gastos registrados</p></div>';
         return;
       }
 
-      // Solo director financiero puede editar/eliminar
       const esDirectorFin = me.rol === 'director_financiero';
 
       cont.innerHTML = finanzas.map(f => {
-        // Mostrar nombre del responsable si está en cache
         const usuResp = usuariosCache.find(u => u.cargo === f.responsable);
         const nombreResp = usuResp ? capitalizar(usuResp.nombre) : (f.responsable || '-');
 
@@ -666,8 +648,19 @@ function exportarExcel() {
   window.location.href = '/api/exportar/excel';
 }
 
-// ==================== CERRAR MODALES AL CLICK FUERA ====================
+// ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', () => {
+  // Restaurar sesión al recargar página
+  const sesionGuardada = localStorage.getItem('utb_session');
+  if (sesionGuardada) {
+    try {
+      me = JSON.parse(sesionGuardada);
+      entrarApp();
+    } catch (e) {
+      localStorage.removeItem('utb_session');
+    }
+  }
+
   document.getElementById('modalAct').addEventListener('click', e => {
     if (e.target === document.getElementById('modalAct')) cerrarModal('modalAct');
   });
