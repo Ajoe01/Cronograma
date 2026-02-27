@@ -553,13 +553,13 @@ def exportar_excel():
     c.execute("SELECT * FROM actividades ORDER BY fecha_limite ASC")
     actividades = c.fetchall()
 
-    # Colores por estado
+    # Colores por estado (coinciden con leyenda de la app)
     COLOR_ESTADO = {
-        'prematuro': 'FF2196F3',   # Azul
-        'tiempo':    'FF4CAF50',   # Verde
-        'leve':      'FFFF9800',   # Naranja
-        'tarde':     'FFF44336',   # Rojo
-        'default':   'FFFFC107',   # Amarillo (en ejecución)
+        'default':   'FFC107',   # Amarillo  — En ejecución
+        'prematuro': '2196F3',   # Azul      — Completado prematuro
+        'tiempo':    '4CAF50',   # Verde     — Completado a tiempo
+        'leve':      'FF9800',   # Naranja   — Retraso leve
+        'tarde':     'F44336',   # Rojo      — Retraso grave
     }
 
     def calcular_estado(completada, fecha_limite, fecha_completado):
@@ -580,8 +580,7 @@ def exportar_excel():
         )
         color_hex = COLOR_ESTADO[estado_key]
         estado_fill = PatternFill(start_color=color_hex, end_color=color_hex, fill_type="solid")
-        # Texto negro siempre para legibilidad
-        estado_font = Font(bold=True, color="FFFFFFFF" if estado_key in ('prematuro', 'tarde') else "FF000000")
+        estado_font = Font(bold=True, color="FFFFFF" if estado_key in ('prematuro', 'tarde') else "000000")
 
         ws_act.cell(row=row_num, column=1, value=act['nombre']).border = border
         ws_act.cell(row=row_num, column=2, value=act['responsable']).border = border
