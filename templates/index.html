@@ -52,22 +52,14 @@
         </div>
       </div>
       <div class="fg">
-        <label>💼 Cargo</label>
+        <label>💼 Cargo / Rol</label>
         <select id="rCargo">
           <option value="">-- Selecciona tu cargo --</option>
-          <option>Director de Proyecto</option>
-          <option>Director de Procesos Mecanicos</option>
-          <option>Director de Procesos Electronicos</option>
-          <option>Diseñador de Sistemas de Control</option>
-          <option>Director Financiero</option>
-        </select>
-      </div>
-      <div class="fg">
-        <label>🎭 Rol en el sistema</label>
-        <select id="rRol">
-          <option value="miembro">Miembro del equipo</option>
-          <option value="coordinador">Coordinador</option>
-          <option value="director_financiero">Director Financiero</option>
+          <option value="Director de Proyecto">Director de Proyecto</option>
+          <option value="Director de Procesos Mecanicos">Director de Procesos Mecánicos</option>
+          <option value="Director de Procesos Electronicos">Director de Procesos Electrónicos</option>
+          <option value="Diseñador de Sistemas de Control">Diseñador de Sistemas de Control</option>
+          <option value="Director Financiero">Director Financiero</option>
         </select>
       </div>
       <div class="form-row">
@@ -220,7 +212,9 @@
     </div>
     <div class="fg">
       <label>👤 Responsable *</label>
-      <input type="text" id="aResp" placeholder="Nombre del responsable">
+      <select id="aResp">
+        <option value="">-- Selecciona el responsable --</option>
+      </select>
     </div>
     <div class="form-row">
       <div class="fg">
@@ -345,7 +339,9 @@
 
     <div class="fg">
       <label>👤 Responsable de la compra</label>
-      <input type="text" id="fResponsable" placeholder="Quién realizó la compra">
+      <select id="fResponsable">
+        <option value="">-- Selecciona el responsable --</option>
+      </select>
     </div>
 
     <div class="fg">
@@ -360,4 +356,3 @@
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
-
