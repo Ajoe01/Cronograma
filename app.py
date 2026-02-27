@@ -651,12 +651,13 @@ def exportar_excel():
         G_EVEN      = "112A54"
         G_MONTH     = "243F72"
 
+        # BARRA_COLORS actualizado: El verde ahora es para Electrónicos
         BARRA_COLORS = {
-            "Director de Proyecto":             "27AE60",
-            "Director de Procesos Mecanicos":   "F39C12",
-            "Director de Procesos Electronicos":"FFC107",
-            "Diseñador de Sistemas de Control": "9B59B6",
-            "Director Financiero":              "E74C3C",
+            "Director de Proyecto":             "2C3E50", # Azul Oscuro (Ya no es verde)
+            "Director de Procesos Mecanicos":   "FF69B4", # Rosado
+            "Director de Procesos Electronicos":"27AE60", # <--- AQUÍ ESTÁ TU VERDE
+            "Diseñador de Sistemas de Control": "9B59B6", # Morado
+            "Director Financiero":              "E74C3C", # Rojo
         }
         ESTADO_BAR = {
             "prematuro": "2196F3",
@@ -799,12 +800,11 @@ def exportar_excel():
         # Leyenda
         ley_row = R_DATA + len(actividades) + 2
         ws_g.row_dimensions[ley_row].height = 18
-        lc = ws_g.cell(ley_row, COL_ACT, value="LEYENDA:")
+        lc = ws_g.cell(ley_row, COL_ACT, value="Actividades Completadas:")
         lc.font = Font(name="Arial", bold=True, size=9, color=G_WHITE)
         lc.fill = PatternFill("solid", start_color=G_BG)
 
         ley_items = [
-            ("En ejecución",  "FFC107"),
             ("Prematuro",     ESTADO_BAR["prematuro"]),
             ("A tiempo",      ESTADO_BAR["tiempo"]),
             ("Retraso leve",  ESTADO_BAR["leve"]),
@@ -819,6 +819,35 @@ def exportar_excel():
             box.font      = Font(name="Arial", size=8, bold=True, color=G_WHITE)
             box.alignment = Alignment(horizontal="center", vertical="center")
             col_ley += 11
+
+        # Leyenda fila 2: Colores por cargo
+        ley_row2 = ley_row + 1
+        ws_g.row_dimensions[ley_row2].height = 18
+
+        lc2 = ws_g.cell(ley_row2, COL_ACT, value="Actividades en ejecucion:")
+        lc2.font = Font(name="Arial", bold=True, size=9, color=G_WHITE)
+        lc2.fill = PatternFill("solid", start_color=G_BG)
+        lc2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws_g.cell(ley_row2, COL_RESP).fill = PatternFill("solid", start_color=G_BG)
+
+        ley_cargos = [
+            ("Dir. Proyecto",    BARRA_COLORS["Director de Proyecto"]),
+            ("Dir. Proc. Mec.",  BARRA_COLORS["Director de Procesos Mecanicos"]),
+            ("Dir. Proc. Elec.", BARRA_COLORS["Director de Procesos Electronicos"]),
+            ("Dis. Control",     BARRA_COLORS["Diseñador de Sistemas de Control"]),
+            ("Dir. Financiero",  BARRA_COLORS["Director Financiero"]),
+        ]
+        col_ley2 = COL_G
+        for label, color in ley_cargos:
+            ws_g.merge_cells(start_row=ley_row2, start_column=col_ley2,
+                             end_row=ley_row2,   end_column=col_ley2 + 9)
+            box = ws_g.cell(ley_row2, col_ley2, value=f"  {label}  ")
+            box.fill      = PatternFill("solid", start_color=color)
+            box.font      = Font(name="Arial", size=8, bold=True, color=G_WHITE)
+            box.alignment = Alignment(horizontal="center", vertical="center")
+            col_ley2 += 11
+
+    
 
     output = io.BytesIO()
     wb.save(output)
@@ -946,6 +975,7 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
