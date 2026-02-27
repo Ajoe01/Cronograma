@@ -893,7 +893,8 @@ def delete_users_page():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Administrar Usuarios — UTB</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='imagenes/favicon.png') }}">
+<title>Administrar Usuarios</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: 'Segoe UI', sans-serif; background: #f4f6f9; min-height: 100vh; }}
@@ -975,6 +976,7 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
