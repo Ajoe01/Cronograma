@@ -297,8 +297,15 @@ function solicitarCompletar(act) {
 
   pendiente = act.id;
   document.getElementById('confirmTxt').textContent =
-    `"${act.nombre}" — Fecha límite: ${ff(act.fecha_limite)}. Indica la fecha real de finalización y observaciones:`;
-  document.getElementById('fechaCompletado').value = new Date().toISOString().split('T')[0];
+    `"${act.nombre}" — Fecha límite: ${ff(act.fecha_limite)}. Ingresa las observaciones de cierre:`;
+
+  // Fecha de hoy fija, no editable
+  const hoy = new Date();
+  const hoyISO = hoy.toISOString().split('T')[0];
+  const [y, m, d] = hoyISO.split('-');
+  document.getElementById('fechaCompletado').value = hoyISO;
+  document.getElementById('fechaCompletadoDisplay').textContent = `${d}/${m}/${y} (hoy)`;
+
   document.getElementById('observaciones').value = '';
   document.getElementById('confirmOv').classList.add('open');
 }
