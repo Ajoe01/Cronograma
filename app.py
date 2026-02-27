@@ -657,7 +657,7 @@ def exportar_excel():
             "Director de Procesos Mecanicos":   "FF69B4", # Rosado
             "Director de Procesos Electronicos":"27AE60", # <--- AQUÍ ESTÁ TU VERDE
             "Diseñador de Sistemas de Control": "9B59B6", # Morado
-            "Director Financiero":              "E74C3C", # Rojo
+            "Director Financiero":              "00CED1", # Rojo
         }
         ESTADO_BAR = {
             "prematuro": "2196F3",
@@ -975,6 +975,7 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
