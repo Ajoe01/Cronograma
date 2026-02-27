@@ -9,6 +9,14 @@ let editFinId = null;
 let pendiente = null;
 let filtroAct = 'todas';
 let tabActual = 'actividades';
+let usuariosCache = []; // Cache de usuarios registrados
+
+// ==================== UTILIDADES ====================
+// Primera letra en mayúscula
+function capitalizar(str) {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
 
 // ==================== TABS LOGIN ====================
 function switchTab(t) {
@@ -31,7 +39,6 @@ function registrar() {
   const nombre = document.getElementById('rNombre').value.trim();
   const user = document.getElementById('rUser').value.trim().toLowerCase();
   const cargo = document.getElementById('rCargo').value;
-  const rol = document.getElementById('rRol').value;
   const pass = document.getElementById('rPass').value;
   const pass2 = document.getElementById('rPass2').value;
   const msg = document.getElementById('rMsg');
@@ -43,6 +50,11 @@ function registrar() {
   if (!/^[a-z0-9]+$/.test(user)) return show('⚠️ Usuario solo letras y números', 'error');
   if (pass.length < 4) return show('⚠️ Contraseña mínimo 4 caracteres', 'error');
   if (pass !== pass2) return show('⚠️ Las contraseñas no coinciden', 'error');
+
+  // El rol se deriva automáticamente del cargo
+  const rol = cargo === 'Director Financiero' ? 'director_financiero'
+    : cargo === 'Director de Proyecto' ? 'coordinador'
+    : 'miembro';
 
   fetch('/api/usuarios/registrar', {
     method: 'POST',
@@ -56,7 +68,6 @@ function registrar() {
         setTimeout(() => switchTab('login'), 1500);
         ['rNombre', 'rUser', 'rPass', 'rPass2'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('rCargo').value = '';
-        document.getElementById('rRol').value = 'miembro';
       } else {
         show(`❌ ${d.error}`, 'error');
       }
@@ -79,7 +90,7 @@ function login() {
     .then(d => {
       if (d.ok) {
         me = d.usuario;
-        document.getElementById('curUser').textContent = me.nombre || me.user;
+        document.getElementById('curUser').textContent = capitalizar(me.nombre || me.user);
         document.getElementById('curCargo').textContent = me.cargo || '';
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('appScreen').style.display = 'block';
@@ -90,8 +101,11 @@ function login() {
           document.getElementById('btnNuevaFinanza').style.display = 'none';
         }
         
-        cargarActividades();
-        cargarFinanzas();
+        // Cargar usuarios para los selects de responsable
+        cargarUsuarios().then(() => {
+          cargarActividades();
+          cargarFinanzas();
+        });
       } else {
         msg.textContent = '❌ Usuario o contraseña incorrectos';
         msg.className = 'auth-msg error';
@@ -108,11 +122,46 @@ function login() {
 
 function logout() {
   me = null;
+  usuariosCache = [];
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appScreen').style.display = 'none';
   document.getElementById('liUser').value = '';
   document.getElementById('liPass').value = '';
   document.getElementById('liMsg').style.display = 'none';
+}
+
+// ==================== CARGAR USUARIOS (para selects) ====================
+function cargarUsuarios() {
+  return fetch('/api/usuarios/listar')
+    .then(r => r.json())
+    .then(usuarios => {
+      usuariosCache = usuarios;
+      // Llenar todos los selects de responsable
+      llenarSelectResponsable('aResp');
+      llenarSelectResponsable('fResponsable');
+    })
+    .catch(() => {
+      // Si falla, al menos poner el usuario actual
+      usuariosCache = [{ nombre: me.nombre, cargo: me.cargo, username: me.user }];
+      llenarSelectResponsable('aResp');
+      llenarSelectResponsable('fResponsable');
+    });
+}
+
+function llenarSelectResponsable(selectId, valorActual = '') {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">-- Selecciona el responsable --</option>';
+  usuariosCache.forEach(u => {
+    const opt = document.createElement('option');
+    // El value es el cargo, el texto muestra nombre + cargo
+    opt.value = u.cargo;
+    opt.textContent = `${capitalizar(u.nombre)} — ${u.cargo}`;
+    if (valorActual && (u.cargo === valorActual || capitalizar(u.nombre) === valorActual || u.nombre === valorActual)) {
+      opt.selected = true;
+    }
+    sel.appendChild(opt);
+  });
 }
 
 // ==================== TABS NAVEGACIÓN ====================
@@ -167,6 +216,9 @@ const ff = f => {
 // ==================== MODALES ====================
 function abrirModalActividad(id = null) {
   editId = id;
+  // Refrescar el select de responsable
+  llenarSelectResponsable('aResp');
+
   if (id !== null) {
     fetch(`/api/actividades/${id}`)
       .then(r => r.json())
@@ -175,15 +227,17 @@ function abrirModalActividad(id = null) {
         document.getElementById('aNom').value = a.nombre;
         document.getElementById('aDesc').value = a.descripcion || '';
         document.getElementById('aDet').value = a.detalles || '';
-        document.getElementById('aResp').value = a.responsable;
+        // Seleccionar el responsable en el select por cargo o nombre
+        llenarSelectResponsable('aResp', a.responsable);
         document.getElementById('aIni').value = a.fecha_inicio || '';
         document.getElementById('aLim').value = a.fecha_limite || '';
         document.getElementById('aPrio').value = a.prioridad || 'media';
       });
   } else {
     document.getElementById('mActTitle').textContent = '➕ Nueva Actividad';
-    ['aNom', 'aDesc', 'aDet', 'aResp', 'aIni', 'aLim'].forEach(id => document.getElementById(id).value = '');
+    ['aNom', 'aDesc', 'aDet', 'aIni', 'aLim'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('aPrio').value = 'media';
+    document.getElementById('aResp').value = '';
   }
   document.getElementById('modalAct').classList.add('open');
 }
@@ -196,7 +250,7 @@ function cerrarModal(idModal) {
 
 function guardarActividad() {
   const nombre = document.getElementById('aNom').value.trim();
-  const responsable = document.getElementById('aResp').value.trim();
+  const responsable = document.getElementById('aResp').value; // cargo seleccionado
   const fechaInicio = document.getElementById('aIni').value;
   const fechaLimite = document.getElementById('aLim').value;
 
@@ -235,9 +289,8 @@ function guardarActividad() {
 
 // ==================== COMPLETAR ACTIVIDAD ====================
 function solicitarCompletar(act) {
-  // Verificar si el usuario es el responsable
-  if (act.responsable.toLowerCase() !== me.nombre.toLowerCase() && 
-      act.responsable.toLowerCase() !== me.user.toLowerCase()) {
+  // El responsable es el cargo; verificar si el usuario logueado tiene ese cargo
+  if (act.responsable !== me.cargo) {
     alert('⚠️ Solo el responsable de la actividad puede marcarla como completada.');
     return;
   }
@@ -293,6 +346,10 @@ function verDetalles(id) {
     .then(r => r.json())
     .then(act => {
       const estado = getEstado(act);
+      // Buscar el nombre del usuario con ese cargo para mostrarlo
+      const usuResp = usuariosCache.find(u => u.cargo === act.responsable);
+      const nombreResp = usuResp ? capitalizar(usuResp.nombre) : act.responsable;
+
       const html = `
         <div class="detalle-section">
           <h4>📌 ${act.nombre}</h4>
@@ -308,7 +365,7 @@ function verDetalles(id) {
         <div class="detalle-grid">
           <div class="detalle-item">
             <strong>👤 Responsable</strong>
-            <span>${act.responsable}</span>
+            <span>${nombreResp}<br><small style="color:#888">${act.responsable}</small></span>
           </div>
           <div class="detalle-item">
             <strong>🏷️ Prioridad</strong>
@@ -328,7 +385,7 @@ function verDetalles(id) {
           </div>
           <div class="detalle-item">
             <strong>👤 Creada por</strong>
-            <span>${act.creada_por || '-'}</span>
+            <span>${capitalizar(act.creada_por) || '-'}</span>
           </div>
         </div>
 
@@ -342,7 +399,7 @@ function verDetalles(id) {
             </div>
             <div class="detalle-item">
               <strong>👤 Completada por</strong>
-              <span>${act.completada_por || '-'}</span>
+              <span>${capitalizar(act.completada_por) || '-'}</span>
             </div>
           </div>
           ${act.observaciones ? `
@@ -374,9 +431,6 @@ function filtrar(e, btn) {
   cargarActividades();
 }
 
-// CONTINÚA EN PARTE 2...
-// PARTE 2: CONTINÚA desde app.js Parte 1
-
 // ==================== CARGAR ACTIVIDADES ====================
 function cargarActividades() {
   fetch('/api/actividades')
@@ -405,9 +459,12 @@ function cargarActividades() {
         const e = getEstado(a);
         const done = a.completada;
         
-        // Control de permisos: solo el responsable puede completar
-        const esResponsable = a.responsable.toLowerCase() === me.nombre.toLowerCase() || 
-                             a.responsable.toLowerCase() === me.user.toLowerCase();
+        // El responsable ahora es un cargo; verificar si el usuario logueado tiene ese cargo
+        const esResponsable = a.responsable === me.cargo;
+
+        // Buscar nombre del responsable en cache
+        const usuResp = usuariosCache.find(u => u.cargo === a.responsable);
+        const nombreResp = usuResp ? capitalizar(usuResp.nombre) : a.responsable;
 
         const bComp = done
           ? `<button class="btn-a btn-lock" disabled title="Ya completada">✅</button>`
@@ -420,7 +477,7 @@ function cargarActividades() {
           : `<button class="btn-a btn-edit" onclick="abrirModalActividad(${a.id})" title="Editar">✏️</button>`;
 
         const compInfo = done
-          ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${a.completada_por}</div>`
+          ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${capitalizar(a.completada_por)}</div>`
           : '';
 
         return `
@@ -428,10 +485,13 @@ function cargarActividades() {
             <div>
               <div class="a-nom ${done ? 'done' : ''}">${a.nombre}</div>
               ${a.descripcion ? `<div class="a-desc">${a.descripcion}</div>` : ''}
-              <div class="a-meta">${PRIO[a.prioridad] || ''} · Creada por ${a.creada_por || '-'}</div>
+              <div class="a-meta">${PRIO[a.prioridad] || ''} · Creada por ${capitalizar(a.creada_por) || '-'}</div>
               ${compInfo}
             </div>
-            <div style="font-weight:600;color:#444;font-size:.88rem;">${a.responsable}</div>
+            <div style="font-weight:600;color:#444;font-size:.88rem;">
+              ${nombreResp}<br>
+              <small style="color:#888;font-weight:400">${a.responsable}</small>
+            </div>
             <div style="font-size:.86rem;color:#666;">${ff(a.fecha_inicio)}</div>
             <div style="font-size:.86rem;font-weight:600;">${ff(a.fecha_limite)}</div>
             <div><span class="badge ${EBADGE[e]}">${ELABEL[e]}</span></div>
@@ -449,6 +509,9 @@ function cargarActividades() {
 // ==================== FINANZAS ====================
 function abrirModalFinanza(id = null) {
   editFinId = id;
+  // Refrescar select de responsable
+  llenarSelectResponsable('fResponsable');
+
   if (id !== null) {
     fetch(`/api/finanzas`)
       .then(r => r.json())
@@ -466,17 +529,18 @@ function abrirModalFinanza(id = null) {
         document.getElementById('fValorTotal').value = `$${fin.valor_total.toLocaleString()}`;
         document.getElementById('fMetodo').value = fin.metodo_pago || '';
         document.getElementById('fFactura').value = fin.factura || '';
-        document.getElementById('fResponsable').value = fin.responsable || '';
+        llenarSelectResponsable('fResponsable', fin.responsable);
         document.getElementById('fObs').value = fin.observaciones || '';
       });
   } else {
     document.getElementById('mFinTitle').textContent = '➕ Nuevo Gasto';
-    ['fFecha', 'fConcepto', 'fProveedor', 'fValorUnit', 'fFactura', 'fResponsable', 'fObs'].forEach(id => 
+    ['fFecha', 'fConcepto', 'fProveedor', 'fValorUnit', 'fFactura', 'fObs'].forEach(id => 
       document.getElementById(id).value = '');
     document.getElementById('fCategoria').value = '';
     document.getElementById('fMetodo').value = '';
     document.getElementById('fCantidad').value = 1;
     document.getElementById('fValorTotal').value = '$0';
+    document.getElementById('fResponsable').value = '';
   }
   document.getElementById('modalFin').classList.add('open');
 }
@@ -558,6 +622,10 @@ function cargarFinanzas() {
       const esDirectorFin = me.rol === 'director_financiero';
 
       cont.innerHTML = finanzas.map(f => {
+        // Mostrar nombre del responsable si está en cache
+        const usuResp = usuariosCache.find(u => u.cargo === f.responsable);
+        const nombreResp = usuResp ? capitalizar(usuResp.nombre) : (f.responsable || '-');
+
         const bEdit = esDirectorFin
           ? `<button class="btn-a btn-edit" onclick="abrirModalFinanza(${f.id})" title="Editar">✏️</button>`
           : `<button class="btn-a btn-lock" disabled title="Solo Director Financiero">🔒</button>`;
