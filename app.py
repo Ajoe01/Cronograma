@@ -638,6 +638,189 @@ def exportar_excel():
     ws_fin.column_dimensions['G'].width = 12
     ws_fin.column_dimensions['H'].width = 15
 
+    # ── HOJA 3: GANTT ────────────────────────────────────────
+    if actividades:
+        from datetime import date, timedelta
+
+        ws_g = wb.create_sheet("Gantt")
+
+        G_BG        = "0D1B3E"
+        G_HEADER    = "1A2E5C"
+        G_WHITE     = "FFFFFF"
+        G_SIDEBAR   = "1E3A6E"
+        G_ODD       = "0F2347"
+        G_EVEN      = "112A54"
+        G_MONTH     = "243F72"
+
+        BARRA_COLORS = {
+            "Director de Proyecto":             "27AE60",
+            "Director de Procesos Mecanicos":   "F39C12",
+            "Director de Procesos Electronicos":"3498DB",
+            "Diseñador de Sistemas de Control": "9B59B6",
+            "Director Financiero":              "E74C3C",
+        }
+        ESTADO_BAR = {
+            "prematuro": "2196F3",
+            "tiempo":    "4CAF50",
+            "leve":      "FF9800",
+            "tarde":     "F44336",
+            "default":   "95A5A6",
+        }
+
+        def g_estado(act):
+            if not act["completada"]: return "default"
+            lim  = date.fromisoformat(str(act["fecha_limite"]))
+            comp = date.fromisoformat(str(act["fecha_completado"]))
+            diff = (comp - lim).days
+            if diff < -7: return "prematuro"
+            if diff <= 0: return "tiempo"
+            if diff <= 7: return "leve"
+            return "tarde"
+
+        g_starts = [date.fromisoformat(str(a["fecha_inicio"])) for a in actividades]
+        g_ends   = [date.fromisoformat(str(a["fecha_limite"])) for a in actividades]
+        p_start  = min(g_starts).replace(day=1)
+        p_end    = max(g_ends)
+        if p_end.month == 12:
+            p_end = p_end.replace(year=p_end.year+1, month=1, day=1) - timedelta(days=1)
+        else:
+            p_end = p_end.replace(month=p_end.month+1, day=1) - timedelta(days=1)
+        total_days = (p_end - p_start).days + 1
+
+        COL_ACT  = 1
+        COL_RESP = 2
+        COL_G    = 3
+        DAY_W    = 2.2
+        R_TITLE  = 1
+        R_MONTH  = 2
+        R_DAYS   = 3
+        R_DATA   = 4
+
+        ws_g.sheet_view.showGridLines = False
+
+        # Título
+        ws_g.row_dimensions[R_TITLE].height = 36
+        t_end = COL_G + total_days - 1
+        ws_g.merge_cells(start_row=R_TITLE, start_column=COL_ACT,
+                         end_row=R_TITLE,   end_column=t_end)
+        tc = ws_g.cell(R_TITLE, COL_ACT,
+                       value="CRONOGRAMA DE PROYECTO — DIAGRAMA DE GANTT · UTB")
+        tc.font      = Font(name="Arial", bold=True, size=15, color=G_WHITE)
+        tc.fill      = PatternFill("solid", start_color=G_BG)
+        tc.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws_g.row_dimensions[R_MONTH].height = 22
+        ws_g.row_dimensions[R_DAYS].height  = 16
+
+        for label, col in [("Actividad", COL_ACT), ("Responsable", COL_RESP)]:
+            ws_g.merge_cells(start_row=R_MONTH, start_column=col,
+                             end_row=R_DAYS,    end_column=col)
+            ch = ws_g.cell(R_MONTH, col, value=label)
+            ch.fill      = PatternFill("solid", start_color=G_HEADER)
+            ch.font      = Font(name="Arial", bold=True, size=10, color=G_WHITE)
+            ch.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Meses y días
+        cur = p_start
+        col = COL_G
+        while cur <= p_end:
+            if cur.month == 12:
+                nxt = date(cur.year+1, 1, 1)
+            else:
+                nxt = date(cur.year, cur.month+1, 1)
+            m_end   = min(nxt - timedelta(days=1), p_end)
+            days_in = (m_end - cur).days + 1
+
+            ws_g.merge_cells(start_row=R_MONTH, start_column=col,
+                             end_row=R_MONTH,   end_column=col + days_in - 1)
+            mc = ws_g.cell(R_MONTH, col, value=cur.strftime("%B %Y").capitalize())
+            mc.fill      = PatternFill("solid", start_color=G_MONTH)
+            mc.font      = Font(name="Arial", bold=True, size=10, color=G_WHITE)
+            mc.alignment = Alignment(horizontal="center", vertical="center")
+
+            for d in range(days_in):
+                dc_col  = col + d
+                dc_date = cur + timedelta(days=d)
+                dc = ws_g.cell(R_DAYS, dc_col, value=dc_date.day)
+                dc.fill = PatternFill("solid", start_color=G_MONTH)
+                dc.font = Font(name="Arial", size=7,
+                               color="AAAAAA" if dc_date.weekday() < 5 else "FF6666")
+                dc.alignment = Alignment(horizontal="center", vertical="center")
+                ws_g.column_dimensions[get_column_letter(dc_col)].width = DAY_W
+
+            col += days_in
+            cur  = nxt
+
+        ws_g.column_dimensions[get_column_letter(COL_ACT)].width  = 40
+        ws_g.column_dimensions[get_column_letter(COL_RESP)].width  = 24
+
+        bb = Border(bottom=Side(style="thin", color="243F72"))
+
+        for i, act in enumerate(actividades):
+            row    = R_DATA + i
+            bg_row = G_ODD if i % 2 == 0 else G_EVEN
+            ws_g.row_dimensions[row].height = 20
+
+            nc = ws_g.cell(row, COL_ACT, value=act["nombre"])
+            nc.fill      = PatternFill("solid", start_color=G_SIDEBAR)
+            nc.font      = Font(name="Arial", size=9, color=G_WHITE)
+            nc.alignment = Alignment(horizontal="left", vertical="center",
+                                     wrap_text=True, indent=1)
+            nc.border    = bb
+
+            rc = ws_g.cell(row, COL_RESP, value=act["responsable"])
+            rc.fill      = PatternFill("solid", start_color=G_SIDEBAR)
+            rc.font      = Font(name="Arial", size=8, color="AABBDD", italic=True)
+            rc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            rc.border    = bb
+
+            for d in range(total_days):
+                gc = ws_g.cell(row, COL_G + d)
+                gc.fill   = PatternFill("solid", start_color=bg_row)
+                gc.border = Border(bottom=Side(style="thin", color="1A2E5C"))
+
+            a_start = date.fromisoformat(str(act["fecha_inicio"]))
+            a_end   = date.fromisoformat(str(act["fecha_limite"]))
+            c_ini   = COL_G + (a_start - p_start).days
+            c_fin   = COL_G + (a_end   - p_start).days
+
+            if act["completada"]:
+                bar_color = ESTADO_BAR[g_estado(act)]
+            else:
+                bar_color = BARRA_COLORS.get(act["responsable"], "95A5A6")
+
+            if c_ini <= c_fin:
+                ws_g.merge_cells(start_row=row, start_column=c_ini,
+                                 end_row=row,   end_column=c_fin)
+                bc = ws_g.cell(row, c_ini)
+                bc.fill      = PatternFill("solid", start_color=bar_color)
+                bc.font      = Font(name="Arial", size=7, bold=True, color=G_WHITE)
+                bc.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Leyenda
+        ley_row = R_DATA + len(actividades) + 2
+        ws_g.row_dimensions[ley_row].height = 18
+        lc = ws_g.cell(ley_row, COL_ACT, value="LEYENDA:")
+        lc.font = Font(name="Arial", bold=True, size=9, color=G_WHITE)
+        lc.fill = PatternFill("solid", start_color=G_BG)
+
+        ley_items = [
+            ("En ejecución",  "95A5A6"),
+            ("Prematuro",     ESTADO_BAR["prematuro"]),
+            ("A tiempo",      ESTADO_BAR["tiempo"]),
+            ("Retraso leve",  ESTADO_BAR["leve"]),
+            ("Retraso grave", ESTADO_BAR["tarde"]),
+        ]
+        col_ley = COL_G
+        for label, color in ley_items:
+            ws_g.merge_cells(start_row=ley_row, start_column=col_ley,
+                             end_row=ley_row,   end_column=col_ley + 9)
+            box = ws_g.cell(ley_row, col_ley, value=f"  {label}  ")
+            box.fill      = PatternFill("solid", start_color=color)
+            box.font      = Font(name="Arial", size=8, bold=True, color=G_WHITE)
+            box.alignment = Alignment(horizontal="center", vertical="center")
+            col_ley += 11
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
