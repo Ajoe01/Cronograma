@@ -115,6 +115,11 @@ function entrarApp() {
   } else {
     document.getElementById('btnNuevaFinanza').style.display = '';
   }
+  if (me.rol !== 'coordinador') {
+    document.getElementById('btnNuevaActividad').style.display = 'none';
+  } else {
+    document.getElementById('btnNuevaActividad').style.display = '';
+  }
   cargarUsuarios().then(() => {
     cargarActividades();
     cargarFinanzas();
@@ -467,9 +472,12 @@ function cargarActividades() {
             ? `<button class="btn-a btn-comp" onclick='solicitarCompletar(${JSON.stringify(a)})' title="Completar">✔</button>`
             : `<button class="btn-a btn-lock" disabled title="Solo el responsable puede completarla">🔒</button>`;
 
+        const esCoordinador = me.rol === 'coordinador';
         const bEdit = done
           ? `<button class="btn-a btn-lock" disabled title="Bloqueado">🔒</button>`
-          : `<button class="btn-a btn-edit" onclick="abrirModalActividad(${a.id})" title="Editar">✏️</button>`;
+          : esCoordinador
+            ? `<button class="btn-a btn-edit" onclick="abrirModalActividad(${a.id})" title="Editar">✏️</button>`
+            : `<button class="btn-a btn-lock" disabled title="Solo el Director de Proyecto puede editar">🔒</button>`;
 
         const compInfo = done
           ? `<div class="a-meta">✅ Completada el ${ff(a.fecha_completado)} por ${capitalizar(a.completada_por)}</div>`
