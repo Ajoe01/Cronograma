@@ -297,6 +297,16 @@ def crear_actividad():
     if not all([nombre, responsable, fecha_inicio, fecha_limite]):
         return jsonify({"ok": False, "error": "Faltan campos obligatorios"})
 
+    # Solo Director de Proyecto puede crear actividades
+    creada_por = data.get("creada_por", "")
+    conn_v = get_db()
+    c_v = conn_v.cursor()
+    c_v.execute("SELECT rol FROM usuarios WHERE username = %s", (creada_por,))
+    row_v = c_v.fetchone()
+    conn_v.close()
+    if not row_v or row_v[0] != 'coordinador':
+        return jsonify({"ok": False, "error": "Solo el Director de Proyecto puede crear actividades"})
+
     conn = get_db()
     c = conn.cursor()
     c.execute("""
@@ -334,6 +344,15 @@ def editar_actividad(act_id):
         return jsonify({"ok": False, "error": "No se puede editar actividad completada"})
 
     data = request.get_json()
+
+    # Solo Director de Proyecto puede editar actividades
+    editor = data.get("creada_por", "")
+    c.execute("SELECT rol FROM usuarios WHERE username = %s", (editor,))
+    row_v = c.fetchone()
+    if not row_v or row_v[0] != 'coordinador':
+        conn.close()
+        return jsonify({"ok": False, "error": "Solo el Director de Proyecto puede editar actividades"})
+
     c.execute("""
         UPDATE actividades
         SET nombre = %s, descripcion = %s, detalles = %s, responsable = %s,
@@ -976,11 +995,3 @@ def delete_user(user_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-
-
-
-
-
-
-
-
